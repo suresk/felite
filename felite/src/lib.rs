@@ -7,6 +7,7 @@ mod page;
 mod pager;
 mod record;
 mod slotted;
+mod sql;
 mod storage;
 mod varint;
 
@@ -21,6 +22,7 @@ pub use page::{PAGE_SIZE, Page, PageNo};
 pub use pager::{DEFAULT_FRAMES, FREE, MAGIC, Pager, PoolStats};
 pub use record::{Value, decode, encode};
 pub use slotted::{SLOT_SIZE, SLOTTED_HEADER};
+pub use sql::{Keyword, Span, Symbol, Token, explain, tokenize};
 pub use storage::{MemFile, Storage};
 pub use varint::{put_varint, unzigzag, varint, zigzag};
 
@@ -40,3 +42,4 @@ pub use challenges::ch06::{
 pub use challenges::ch07::{account, delete_range, free_pages, rebuild, tree_pages};
 pub use challenges::ch08::{account_rows, load_range, update_row};
 pub use challenges::ch09::{Shared, SharedPool, clock_misses, lru_misses};
+pub use challenges::ch10::{hex_literal, scan_quoted, strip_block_comments, to_sql};

@@ -15,7 +15,7 @@ not meant to replace SQLite.
 
 ## Where it stands
 
-The repository grows with the book. So far it has the code for Chapters 1 to 9, which is all of Part I (storage):
+The repository grows with the book. So far it has the code for Chapters 1 to 10: all of Part I (storage) and the start of Part II (SQL):
 
 | Chapter | | Main files |
 |---|---|---|
@@ -28,6 +28,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 9, 
 | 7 | Delete, merge and the free list | `src/btree/delete.rs`, `src/pager.rs` |
 | 8 | Rows larger than a page | `src/overflow.rs` |
 | 9 | The buffer pool | `src/pager.rs` |
+| 10 | A tokenizer | `src/sql/token.rs` |
 
 Paths are inside `felite/`. Still to come: the SQL parser and executor, the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code

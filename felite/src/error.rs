@@ -1,5 +1,6 @@
 //! One error type for the whole crate.
 
+use crate::sql::Span;
 use std::fmt;
 use std::io;
 
@@ -17,6 +18,8 @@ pub enum Error {
     TooLarge(usize),
     /// The largest possible row id is in use, so there is no next one.
     OutOfRowIds,
+    /// The SQL could not be understood. The span says where.
+    Syntax(String, Span),
     // @show
 }
 
@@ -33,7 +36,13 @@ impl fmt::Display for Error {
             Error::DuplicateKey => write!(f, "that key is already present"),
             Error::TooLarge(n) => write!(f, "an entry of {n} bytes is too large"),
             Error::OutOfRowIds => write!(f, "the table has used its last row id"),
-            // @show
+            Error::Syntax(message, at) => {
+                write!(
+                    f,
+                    "syntax error at line {}, column {}: {message}",
+                    at.line, at.column
+                )
+            } // @show
         }
     }
 }
