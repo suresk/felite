@@ -37,7 +37,11 @@ impl Database {
     // @listing open
     /// Opens the database in `storage`, creating its schema table if it is new.
     pub fn open(storage: Box<dyn Storage>) -> Result<Database> {
-        let mut pager = Pager::open(storage)?;
+        Database::with_pager(Pager::open(storage)?)
+    }
+
+    /// Opens the database that `pager` holds.
+    pub fn with_pager(mut pager: Pager) -> Result<Database> {
         let schema = match pager.schema_root()? {
             0 => {
                 let schema = Tree::create(&mut pager)?;

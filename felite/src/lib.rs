@@ -21,6 +21,7 @@ mod slotted;
 mod sql;
 mod storage;
 mod varint;
+mod wal;
 
 pub use bind::{Bound, BoundKind, Scope, ScopeColumn, Type, bind, bind_condition};
 pub use btree::{Cursor, Entry, MAX_CELL, TreeInfo, row_id, row_key};
@@ -47,6 +48,8 @@ pub use sql::{Keyword, Span, Symbol, Token, explain, tokenize};
 pub use sql::{Select, SelectItem, Statement, UnaryOp, parse, parse_expr};
 pub use storage::{MemFile, Storage};
 pub use varint::{put_varint, unzigzag, varint, zigzag};
+pub use wal::checksum as log_checksum;
+pub use wal::{FRAME_HEADER, FRAME_SIZE, LOG_HEADER, LOG_MAGIC};
 
 pub use challenges::ch01::{Counting, Counts, FailAfter, ReadOnly, open_checked};
 pub use challenges::ch02::varint_strict;
@@ -74,4 +77,7 @@ pub use challenges::ch14::{Counted, Distinct, insert_select, insert_values};
 pub use challenges::ch15::{delete_returning, truncate_table, would_affect};
 pub use challenges::ch16::{
     SyncEach, byte_sum, checksum, free_list_damage, pages_written,
+};
+pub use challenges::ch17::{
+    NoSync, apply_delta, complete_commits, list_frames, page_delta,
 };

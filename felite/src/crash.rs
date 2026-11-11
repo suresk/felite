@@ -1,7 +1,7 @@
 //! A disk whose power can fail, for seeing what a crash leaves behind.
 
 use crate::storage::{MemFile, Storage};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io;
 use std::rc::Rc;
 
@@ -21,10 +21,16 @@ struct Disk {
     durable: Vec<u8>,
     /// The writes made since the last sync, oldest first.
     pending: Vec<(u64, Vec<u8>)>,
-    writes: u64,
-    syncs: u64,
+    /// The counters, which every file on the same disk shares.
+    counts: Rc<Counts>,
+}
+
+#[derive(Default)]
+struct Counts {
+    writes: Cell<u64>,
+    syncs: Cell<u64>,
     /// The number of writes after which the program is stopped, if it is to be.
-    stop_after: Option<u64>,
+    stop_after: Cell<Option<u64>>,
 }
 
 /// Copies `data` into `bytes` at `offset`, growing `bytes` if it has to.
@@ -38,11 +44,13 @@ fn put(bytes: &mut Vec<u8>, offset: u64, data: &[u8]) {
 // @end
 
 // @listing crash-stop
-impl Disk {
+impl Counts {
     /// Fails if the program was to be stopped by now.
     fn running(&self) -> io::Result<()> {
-        match self.stop_after {
-            Some(limit) if self.writes >= limit => Err(io::Error::other("stopped")),
+        match self.stop_after.get() {
+            Some(limit) if self.writes.get() >= limit => {
+                Err(io::Error::other("stopped"))
+            }
             _ => Ok(()),
         }
     }
@@ -53,24 +61,31 @@ impl CrashDisk {
         CrashDisk::default()
     }
 
+    /// A second file on the same disk. The two are written, synced and crashed
+    /// separately, and they share the counts and the moment the program stops.
+    pub fn another_file(&self) -> CrashDisk {
+        let counts = Rc::clone(&self.0.borrow().counts);
+        CrashDisk(Rc::new(RefCell::new(Disk { counts, ..Disk::default() })))
+    }
+
     /// Stops the program after `writes` more writes: every write and every sync
     /// after that fails.
     pub fn stop_after(&self, writes: u64) {
-        let mut disk = self.0.borrow_mut();
-        disk.stop_after = Some(disk.writes + writes);
+        let counts = &self.0.borrow().counts;
+        counts.stop_after.set(Some(counts.writes.get() + writes));
     }
 
     /// How many writes the disk has accepted.
     pub fn writes(&self) -> u64 {
-        self.0.borrow().writes
+        self.0.borrow().counts.writes.get()
     }
 
     /// How many times it has been synced.
     pub fn syncs(&self) -> u64 {
-        self.0.borrow().syncs
+        self.0.borrow().counts.syncs.get()
     }
 
-    /// How many writes have been made since the last sync.
+    /// How many writes to this file have been made since its last sync.
     pub fn pending(&self) -> usize {
         self.0.borrow().pending.len()
     }
@@ -91,8 +106,8 @@ impl Storage for CrashDisk {
 
     fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
         let mut disk = self.0.borrow_mut();
-        disk.running()?;
-        disk.writes += 1;
+        disk.counts.running()?;
+        disk.counts.writes.set(disk.counts.writes.get() + 1);
         put(&mut disk.cache, offset, buf);
         disk.pending.push((offset, buf.to_vec()));
         Ok(())
@@ -104,8 +119,8 @@ impl Storage for CrashDisk {
 
     fn sync(&mut self) -> io::Result<()> {
         let disk = &mut *self.0.borrow_mut();
-        disk.running()?;
-        disk.syncs += 1;
+        disk.counts.running()?;
+        disk.counts.syncs.set(disk.counts.syncs.get() + 1);
         for (offset, data) in disk.pending.drain(..) {
             put(&mut disk.durable, offset, &data);
         }

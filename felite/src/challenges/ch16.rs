@@ -22,10 +22,11 @@ pub fn pages_written(db: &mut Database, disk: &CrashDisk, sql: &str) -> Result<u
 /// Continues a checksum over `bytes`, whose length must be a multiple of 8.
 /// Start with `(0, 0)`.
 pub fn checksum(mut sums: (u32, u32), bytes: &[u8]) -> (u32, u32) {
-    let word = |b: &[u8]| u32::from_be_bytes([b[0], b[1], b[2], b[3]]);
-    for pair in bytes.chunks_exact(8) {
-        sums.0 = sums.0.wrapping_add(word(&pair[..4])).wrapping_add(sums.1);
-        sums.1 = sums.1.wrapping_add(word(&pair[4..])).wrapping_add(sums.0);
+    let (words, _) = bytes.as_chunks::<4>();
+    let mut words = words.iter().map(|word| u32::from_be_bytes(*word));
+    while let (Some(first), Some(second)) = (words.next(), words.next()) {
+        sums.0 = sums.0.wrapping_add(first).wrapping_add(sums.1);
+        sums.1 = sums.1.wrapping_add(second).wrapping_add(sums.0);
     }
     sums
 }

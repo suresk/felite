@@ -3,6 +3,7 @@
 use crate::error::{Error, Result};
 use crate::page::{PAGE_SIZE, Page, PageNo};
 use crate::storage::Storage;
+use crate::wal::Wal;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -43,6 +44,7 @@ pub struct Pager {
     frames: HashMap<PageNo, Frame>,
     // @hide
     pool: Pool,
+    wal: Option<Wal>,
     // @show
 }
 // @end
@@ -95,6 +97,7 @@ impl Pager {
                 recent: HashSet::new(),
                 stats: PoolStats::default(),
             },
+            wal: None,
             // @show
         };
         if pager.storage.size()? == 0 {
@@ -142,6 +145,13 @@ impl Pager {
         match self.frames.entry(n) {
             Entry::Occupied(frame) => Ok(frame.into_mut()),
             Entry::Vacant(slot) => {
+                // @hide
+                if let Some(wal) = &mut self.wal
+                    && let Some(page) = wal.read(n)?
+                {
+                    return Ok(slot.insert(Frame { page, dirty: false }));
+                }
+                // @show
                 let mut page = Page::new();
                 self.storage.read_at(offset(n), page.bytes_mut())?;
                 // @hide
@@ -224,6 +234,11 @@ impl Pager {
     // @listing evict
     /// Drops page `n` from memory, writing it to the file first if it has changed.
     fn evict(&mut self, n: PageNo) -> Result<()> {
+        // @hide
+        if self.wal.is_some() {
+            return self.evict_to_log(n);
+        }
+        // @show
         if let Some(frame) = self.frames.get(&n) {
             if frame.dirty {
                 self.storage.write_at(offset(n), frame.page.bytes())?;
@@ -358,6 +373,11 @@ impl Pager {
     /// Writes every changed page to the file, lowest page number first, and waits
     /// for the disk.
     pub fn flush(&mut self) -> Result<()> {
+        // @hide
+        if self.wal.is_some() {
+            return self.commit();
+        }
+        // @show
         let mut dirty: Vec<_> =
             self.frames.iter_mut().filter(|(_, frame)| frame.dirty).collect();
         dirty.sort_by_key(|(n, _)| **n);
@@ -369,6 +389,68 @@ impl Pager {
             frame.dirty = false;
         }
         self.storage.sync()?;
+        Ok(())
+    }
+    // @end
+
+    // @listing open-logged
+    /// Opens the database in `storage`, with a write-ahead log in `log`.
+    pub fn open_logged(
+        storage: Box<dyn Storage>,
+        log: Box<dyn Storage>,
+    ) -> Result<Pager> {
+        let mut pager = Pager::open(storage)?;
+        pager.wal = Some(Wal::open(log)?);
+        Ok(pager)
+    }
+
+    /// Changes how many pages the pager may keep in memory.
+    pub fn set_capacity(&mut self, frames: usize) {
+        self.pool.capacity = frames.max(1);
+    }
+
+    /// How many frames the log holds, or 0 if there is no log.
+    pub fn log_frames(&self) -> u32 {
+        self.wal.as_ref().map_or(0, Wal::frames)
+    }
+    // @end
+
+    // @listing commit
+    /// Makes every change since the last commit permanent, all of them or none.
+    pub fn commit(&mut self) -> Result<()> {
+        if self.wal.is_none() {
+            return self.flush();
+        }
+        // A commit is marked on its last frame, so there has to be a frame. If the
+        // only changes are in frames that were written earlier, log the header again.
+        let nothing_dirty = self.frames.values().all(|frame| !frame.dirty);
+        if nothing_dirty && self.wal.as_ref().is_some_and(Wal::has_pending) {
+            self.load(0)?.dirty = true;
+        }
+        let Some(wal) = &mut self.wal else { return Ok(()) };
+        let mut dirty: Vec<_> =
+            self.frames.iter_mut().filter(|(_, frame)| frame.dirty).collect();
+        dirty.sort_by_key(|(n, _)| **n);
+        let last = dirty.len().saturating_sub(1);
+        for (i, (n, frame)) in dirty.into_iter().enumerate() {
+            wal.append(*n, &frame.page, i == last)?;
+            frame.dirty = false;
+        }
+        Ok(())
+    }
+    // @end
+
+    // @listing evict-to-log
+    /// Drops page `n` from memory. If it has changed, it goes to the log first, in
+    /// a frame that is not part of any commit yet.
+    fn evict_to_log(&mut self, n: PageNo) -> Result<()> {
+        if let (Some(frame), Some(wal)) = (self.frames.get(&n), &mut self.wal) {
+            if frame.dirty {
+                wal.append(n, &frame.page, false)?;
+            }
+            self.frames.remove(&n);
+            self.pool.stats.evictions += 1;
+        }
         Ok(())
     }
     // @end
