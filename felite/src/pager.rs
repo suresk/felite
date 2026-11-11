@@ -500,4 +500,30 @@ impl Pager {
         Ok(())
     }
     // @end
+
+    // @listing rollback
+    /// Whether this pager has a log, and so can undo.
+    pub fn logged(&self) -> bool {
+        self.wal.is_some()
+    }
+
+    /// Undoes every change since the last commit.
+    pub fn rollback(&mut self) -> Result<()> {
+        let Some(wal) = &mut self.wal else {
+            return Err(Error::Corrupt("a pager with no log cannot undo".into()));
+        };
+        wal.rollback();
+        // Every page in memory is suspect. Drop them all, and read again as needed.
+        self.frames.clear();
+        self.pool.clock.clear();
+        self.pool.recent.clear();
+        if self.storage.size()? == 0 && !wal.holds(0) {
+            // Nothing was ever committed, so this goes back to being a new database.
+            let new = Pager::open(Box::new(MemFile::new()))?;
+            self.frames = new.frames;
+            self.pool.clock = new.pool.clock;
+        }
+        Ok(())
+    }
+    // @end
 }

@@ -20,6 +20,7 @@ mod shell;
 mod slotted;
 mod sql;
 mod storage;
+mod transaction;
 mod varint;
 mod wal;
 
@@ -47,6 +48,7 @@ pub use sql::{Delete, Update};
 pub use sql::{Keyword, Span, Symbol, Token, explain, tokenize};
 pub use sql::{Select, SelectItem, Statement, UnaryOp, parse, parse_expr};
 pub use storage::{MemFile, Storage};
+pub use transaction::Transaction;
 pub use varint::{put_varint, unzigzag, varint, zigzag};
 pub use wal::checksum as log_checksum;
 pub use wal::{FRAME_HEADER, FRAME_SIZE, LOG_HEADER, LOG_MAGIC};
@@ -82,3 +84,4 @@ pub use challenges::ch17::{
     NoSync, apply_delta, complete_commits, list_frames, page_delta,
 };
 pub use challenges::ch18::{LogReport, log_report, recovery_reads, to_disks};
+pub use challenges::ch19::{atomically, dry_run, execute_script, insert_in_batches};

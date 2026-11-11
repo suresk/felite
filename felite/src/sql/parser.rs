@@ -122,6 +122,9 @@ impl Parser {
             Token::Keyword(Keyword::Drop) => Statement::DropTable(self.drop_table()?),
             Token::Keyword(Keyword::Delete) => Statement::Delete(self.delete()?),
             Token::Keyword(Keyword::Update) => Statement::Update(self.update()?),
+            Token::Keyword(Keyword::Begin) => self.word(Statement::Begin),
+            Token::Keyword(Keyword::Commit) => self.word(Statement::Commit),
+            Token::Keyword(Keyword::Rollback) => self.word(Statement::Rollback),
             // @show
             _ => return self.expected("a statement"),
         };
@@ -187,6 +190,14 @@ impl Parser {
     // @end
 
     // @listing parse-delete-update
+    // @listing one-word
+    /// A statement that is a single keyword: steps past it.
+    fn word(&mut self, statement: Statement) -> Statement {
+        self.advance();
+        statement
+    }
+    // @end
+
     fn delete(&mut self) -> Result<Delete> {
         self.expect_keyword(Keyword::Delete)?;
         self.expect_keyword(Keyword::From)?;

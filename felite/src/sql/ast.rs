@@ -15,6 +15,9 @@ pub enum Statement {
     DropTable(String),
     Delete(Delete),
     Update(Update),
+    Begin,
+    Commit,
+    Rollback,
     // @show
 }
 // @end
@@ -271,6 +274,9 @@ impl fmt::Display for Statement {
                     None => Ok(()),
                 }
             }
+            Statement::Begin => write!(f, "BEGIN"),
+            Statement::Commit => write!(f, "COMMIT"),
+            Statement::Rollback => write!(f, "ROLLBACK"),
             // @show
             Statement::Select(select) => {
                 write!(f, "SELECT ")?;

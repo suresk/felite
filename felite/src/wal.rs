@@ -49,6 +49,10 @@ pub(crate) struct Wal {
     committed: HashMap<PageNo, u32>,
     /// The same, for the frames written since the last commit.
     pending: HashMap<PageNo, u32>,
+    // @hide
+    /// The values of `frames` and `sums` as they were after the last commit.
+    committed_end: (u32, (u32, u32)),
+    // @show
 }
 // @end
 
@@ -63,6 +67,9 @@ impl Wal {
             frames: 0,
             committed: HashMap::new(),
             pending: HashMap::new(),
+            // @hide
+            committed_end: (0, (0, 0)),
+            // @show
         };
         // @hide
         if wal.recover()? {
@@ -86,6 +93,9 @@ impl Wal {
         self.storage.write_at(0, &header)?;
         self.storage.sync()?;
         self.sums = sums;
+        // @hide
+        self.committed_end = (0, sums);
+        // @show
         Ok(())
     }
     // @end
@@ -115,6 +125,9 @@ impl Wal {
         if commit {
             self.storage.sync()?;
             self.committed.extend(self.pending.drain());
+            // @hide
+            self.committed_end = (self.frames, self.sums);
+            // @show
         }
         Ok(())
     }
@@ -183,6 +196,9 @@ impl Wal {
                 self.sums = sums;
             }
         }
+        // @hide
+        self.committed_end = (self.frames, self.sums);
+        // @show
         Ok(true)
     }
     // @end
@@ -225,6 +241,15 @@ impl Wal {
         self.frames = 0;
         self.committed.clear();
         Ok(())
+    }
+    // @end
+
+    // @listing wal-rollback
+    /// Forgets every frame written since the last commit. The next frame will be
+    /// written over the first of them.
+    pub(crate) fn rollback(&mut self) {
+        self.pending.clear();
+        (self.frames, self.sums) = self.committed_end;
     }
     // @end
 }

@@ -8,6 +8,7 @@ use crate::pager::Pager;
 use crate::query::ResultSet;
 use crate::sql::{CreateTable, Statement, parse};
 use crate::storage::Storage;
+use crate::transaction::Transaction;
 use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 
@@ -18,6 +19,9 @@ pub struct Database {
     pub(crate) schema: Tree,
     /// Every table, under its name in lower case.
     pub(crate) tables: BTreeMap<String, Table>,
+    // @hide
+    pub(crate) transaction: Transaction,
+    // @show
 }
 
 /// What a statement produced.
@@ -43,23 +47,38 @@ impl Database {
 
     /// Opens the database that `pager` holds.
     pub fn with_pager(mut pager: Pager) -> Result<Database> {
+        let (schema, tables) = Database::read_catalog(&mut pager)?;
+        Ok(Database {
+            pager,
+            schema,
+            tables,
+            // @hide
+            transaction: Transaction::Closed,
+            // @show
+        })
+    }
+
+    /// Finds the schema table, creating it in a new database, and learns every
+    /// table from its row there.
+    pub(crate) fn read_catalog(
+        pager: &mut Pager,
+    ) -> Result<(Tree, BTreeMap<String, Table>)> {
         let schema = match pager.schema_root()? {
             0 => {
-                let schema = Tree::create(&mut pager)?;
+                let schema = Tree::create(pager)?;
                 pager.set_schema_root(schema.root())?;
                 schema
             }
             root => Tree::open(root),
         };
-        // Read the schema table, and learn each table from its row.
         let mut tables = BTreeMap::new();
-        let mut cursor = Cursor::first(&schema, &mut pager)?;
-        while let Some((key, stored)) = cursor.next(&mut pager)? {
-            let record = load(&mut pager, stored)?;
+        let mut cursor = Cursor::first(&schema, pager)?;
+        while let Some((key, stored)) = cursor.next(pager)? {
+            let record = load(pager, stored)?;
             let table = Table::from_schema(row_id(&key)?, &record)?;
             tables.insert(fold(&table.name), table);
         }
-        Ok(Database { pager, schema, tables })
+        Ok((schema, tables))
     }
     // @end
 
@@ -102,22 +121,38 @@ impl Database {
     // @listing execute
     /// Runs one statement, and writes what it changed to the file.
     pub fn execute(&mut self, sql: &str) -> Result<Output> {
-        let output = match parse(sql)? {
-            Statement::CreateTable(create) => self.create_table(create)?,
-            Statement::DropTable(name) => self.drop_table(&name)?,
-            // @hide
-            Statement::Insert(insert) => self.insert(&insert)?,
-            Statement::Select(select) => return self.select(&select),
-            Statement::Delete(delete) => self.delete(&delete)?,
-            Statement::Update(update) => self.update(&update)?,
-            #[allow(unreachable_patterns)]
-            // @show
-            other => {
-                return sql_error(format!("felite cannot run this yet: {other}"));
-            }
-        };
+        // @hide
+        if self.pager.logged() {
+            return self.transact(sql);
+        }
+        // @show
+        let output = self.run(parse(sql)?)?;
+        // @hide
+        if let Output::Rows(_) = output {
+            return Ok(output);
+        }
+        // @show
         self.pager.flush()?;
         Ok(output)
+    }
+
+    /// Carries out a statement that has been parsed.
+    pub(crate) fn run(&mut self, statement: Statement) -> Result<Output> {
+        match statement {
+            Statement::CreateTable(create) => self.create_table(create),
+            Statement::DropTable(name) => self.drop_table(&name),
+            // @hide
+            Statement::Insert(insert) => self.insert(&insert),
+            Statement::Select(select) => self.select(&select),
+            Statement::Delete(delete) => self.delete(&delete),
+            Statement::Update(update) => self.update(&update),
+            Statement::Begin | Statement::Commit | Statement::Rollback => {
+                sql_error("a database with no log has no transactions".to_string())
+            }
+            #[allow(unreachable_patterns)]
+            // @show
+            other => sql_error(format!("felite cannot run this yet: {other}")),
+        }
     }
     // @end
 
