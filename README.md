@@ -15,7 +15,7 @@ not meant to replace SQLite.
 
 ## Where it stands
 
-The repository grows with the book. So far it has the code for Chapters 1 to 13: all of Part I (storage) and the start of Part II (SQL):
+The repository grows with the book. So far it has the code for Chapters 1 to 14: all of Part I (storage) and the start of Part II (SQL):
 
 | Chapter | | Main files |
 |---|---|---|
@@ -32,8 +32,9 @@ The repository grows with the book. So far it has the code for Chapters 1 to 13:
 | 11 | A parser | `src/sql/ast.rs`, `src/sql/parser.rs` |
 | 12 | The catalog | `src/catalog.rs`, `src/db.rs` |
 | 13 | Expressions and NULL | `src/bind.rs`, `src/eval.rs` |
+| 14 | INSERT and SELECT | `src/exec.rs`, `src/query.rs`, `src/insert.rs`, `src/shell.rs`, `src/bin/felite.rs` |
 
-Paths are inside `felite/`. Still to come: the SQL executor, the
+Paths are inside `felite/`. Still to come: UPDATE and DELETE, the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code
 from earlier chapters can still change.
 
@@ -48,6 +49,7 @@ $ cargo run --example first_db     # makes first.db, a three-page database (Chap
 $ cargo xtask dump first.db 2      # a page of it as a hex dump
 $ cargo xtask cells some.db 3      # the cells of a slotted page (Chapter 3)
 $ cargo xtask check 4              # one chapter's tests
+$ cargo run --bin felite -- my.db   # a prompt: type SQL, end each statement with ;
 ```
 
 ## Following the book

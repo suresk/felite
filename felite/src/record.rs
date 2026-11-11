@@ -110,3 +110,17 @@ pub(crate) fn decode_value(code: u64, rest: &mut &[u8]) -> Result<Value> {
     })
 }
 // @end
+
+// @listing display-value
+/// A value as a result table shows it.
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Value::Null => write!(f, "NULL"),
+            Value::Integer(i) => write!(f, "{i}"),
+            Value::Real(x) => write!(f, "{x:?}"),
+            Value::Text(s) => write!(f, "{s}"),
+        }
+    }
+}
+// @end

@@ -156,11 +156,6 @@ fn definitions_that_are_refused() {
         error(&mut db, "DROP TABLE airports"),
         "there is no table named airports"
     );
-    // A statement the parser understands and the database cannot run yet.
-    assert_eq!(
-        error(&mut db, "SELECT * FROM flights"),
-        "felite cannot run this yet: SELECT * FROM flights"
-    );
     // A syntax error is still a syntax error.
     assert!(matches!(db.execute("CREATE flights"), Err(Error::Syntax(..))));
     // None of the refused statements left anything behind.

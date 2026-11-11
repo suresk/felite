@@ -5,6 +5,7 @@ use crate::catalog::{Table, fold, key_column, sql_error};
 use crate::error::Result;
 use crate::overflow::load;
 use crate::pager::Pager;
+use crate::query::ResultSet;
 use crate::sql::{CreateTable, Statement, parse};
 use crate::storage::Storage;
 use std::collections::BTreeMap;
@@ -23,6 +24,12 @@ pub struct Database {
 pub enum Output {
     /// The statement did its work and has nothing to show for it.
     Done,
+    // @hide
+    /// The statement changed this many rows.
+    Count(usize),
+    /// The statement was a query, and these are its rows.
+    Rows(ResultSet),
+    // @show
 }
 // @end
 
@@ -81,6 +88,11 @@ impl Database {
         let output = match parse(sql)? {
             Statement::CreateTable(create) => self.create_table(create)?,
             Statement::DropTable(name) => self.drop_table(&name)?,
+            // @hide
+            Statement::Insert(insert) => self.insert(&insert)?,
+            Statement::Select(select) => return self.select(&select),
+            #[allow(unreachable_patterns)]
+            // @show
             other => {
                 return sql_error(format!("felite cannot run this yet: {other}"));
             }
