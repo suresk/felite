@@ -15,7 +15,7 @@ not meant to replace SQLite.
 
 ## Where it stands
 
-The repository grows with the book. So far it has the code for Chapters 1 to 4:
+The repository grows with the book. So far it has the code for Chapters 1 to 5:
 
 | Chapter | | Main files |
 |---|---|---|
@@ -23,9 +23,9 @@ The repository grows with the book. So far it has the code for Chapters 1 to 4:
 | 2 | Rows as bytes | `src/varint.rs`, `src/record.rs` |
 | 3 | Slotted pages | `src/slotted.rs` |
 | 4 | A B+tree: search | `src/btree/node.rs`, `src/btree/search.rs` |
+| 5 | Insert and split | `src/btree/insert.rs`, `src/btree/check.rs`, `examples/thousand_rows.rs` |
 
-Paths are inside `felite/`. Still to come: inserting into the tree and splitting pages,
-cursors, deletion and a free list, a buffer pool, the SQL parser and executor, the
+Paths are inside `felite/`. Still to come: cursors, deletion and a free list, a buffer pool, the SQL parser and executor, the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code
 from earlier chapters can still change.
 

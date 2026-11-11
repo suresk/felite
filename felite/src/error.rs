@@ -10,6 +10,12 @@ pub enum Error {
     Io(io::Error),
     /// The file's contents are not something felite wrote.
     Corrupt(String),
+    // @hide
+    /// The key being inserted is already in the tree.
+    DuplicateKey,
+    /// A key and payload of this many bytes are too large to store.
+    TooLarge(usize),
+    // @show
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -21,6 +27,10 @@ impl fmt::Display for Error {
         match self {
             Error::Io(e) => write!(f, "I/O error: {e}"),
             Error::Corrupt(what) => write!(f, "corrupt database: {what}"),
+            // @hide
+            Error::DuplicateKey => write!(f, "that key is already present"),
+            Error::TooLarge(n) => write!(f, "an entry of {n} bytes is too large"),
+            // @show
         }
     }
 }
