@@ -2,6 +2,7 @@ mod btree;
 mod challenges;
 mod dump;
 mod error;
+mod overflow;
 mod page;
 mod pager;
 mod record;
@@ -15,6 +16,7 @@ pub use btree::{
 };
 pub use dump::hex_dump;
 pub use error::{Error, Result};
+pub use overflow::{OVERFLOW, SPILLED, load, release, store};
 pub use page::{PAGE_SIZE, Page, PageNo};
 pub use pager::{FREE, MAGIC, Pager};
 pub use record::{Value, decode, encode};
@@ -36,3 +38,4 @@ pub use challenges::ch06::{
     ReverseCursor, StableCursor, count_range, prefix_end, prefix_scan,
 };
 pub use challenges::ch07::{account, delete_range, free_pages, rebuild, tree_pages};
+pub use challenges::ch08::{account_rows, load_range, update_row};
