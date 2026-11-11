@@ -9,6 +9,7 @@ use crate::query::ResultSet;
 use crate::sql::{CreateTable, Statement, parse};
 use crate::storage::Storage;
 use std::collections::BTreeMap;
+use std::fs::OpenOptions;
 
 // @listing database
 pub struct Database {
@@ -59,6 +60,18 @@ impl Database {
             tables.insert(fold(&table.name), table);
         }
         Ok(Database { pager, schema, tables })
+    }
+    // @end
+
+    // @listing open-file
+    /// Opens the database in the file at `path`, creating it if there is none. Its
+    /// log is the file beside it whose name has `-log` on the end.
+    pub fn open_file(path: &str) -> Result<Database> {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        let file = options.open(path)?;
+        let log = options.open(format!("{path}-log"))?;
+        Database::with_pager(Pager::open_logged(Box::new(file), Box::new(log))?)
     }
     // @end
 

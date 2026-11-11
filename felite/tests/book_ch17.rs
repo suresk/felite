@@ -205,12 +205,13 @@ fn a_commit_is_one_sync() {
     let pager = Pager::open_logged(Box::new(disk.clone()), Box::new(log.clone()));
     let mut db = Database::with_pager(pager.unwrap()).unwrap();
     db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, note TEXT)").unwrap();
-    assert_eq!((disk.writes(), disk.syncs()), (4, 1)); // the log's header, 3 frames
+    // The log's header, with a sync of its own, and then three frames and a sync.
+    assert_eq!((disk.writes(), disk.syncs()), (4, 2));
 
     // A row too long for a page: the leaf, an overflow page and the header change.
     let long = "x".repeat(3000);
     db.execute(&format!("INSERT INTO t (note) VALUES ('{long}')")).unwrap();
-    assert_eq!((disk.writes(), disk.syncs()), (7, 2));
+    assert_eq!((disk.writes(), disk.syncs()), (7, 3));
     // Everything written is synced, and all of it went to the log.
     assert_eq!((disk.pending(), log.pending()), (0, 0));
     assert_eq!(disk.size().unwrap(), 0);
@@ -273,7 +274,8 @@ fn the_log_after_a_workload() {
 
     // The same 192 page writes as in Chapter 16, each one now a frame in the log.
     assert_eq!(db.pager().log_frames(), 192);
-    assert_eq!(disk.syncs(), 110);
+    // One sync for the log's header, and one for each statement that changed a page.
+    assert_eq!(disk.syncs(), 111);
     // The database is 8 pages. Its log is 24 times that size, and its file is empty.
     assert_eq!(db.pager().page_count().unwrap(), 8);
     assert_eq!(log.size().unwrap(), 24 + 192 * 4112);

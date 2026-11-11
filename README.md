@@ -36,6 +36,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 15:
 | 15 | UPDATE and DELETE | `src/modify.rs` |
 | 16 | What a crash does | `src/crash.rs`, `src/check.rs` |
 | 17 | A write-ahead log | `src/wal.rs`, `src/pager.rs` |
+| 18 | Recovery and checkpoints | `src/wal.rs`, `src/pager.rs`, `examples/crash_test.rs` |
 
 Paths are inside `felite/`. Still to come: the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code

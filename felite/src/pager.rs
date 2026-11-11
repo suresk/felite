@@ -2,7 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::page::{PAGE_SIZE, Page, PageNo};
-use crate::storage::Storage;
+use crate::storage::{MemFile, Storage};
 use crate::wal::Wal;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -45,6 +45,7 @@ pub struct Pager {
     // @hide
     pool: Pool,
     wal: Option<Wal>,
+    checkpoint_after: u32,
     // @show
 }
 // @end
@@ -76,6 +77,11 @@ pub struct PoolStats {
 }
 // @end
 
+// @listing checkpoint-frames
+/// How many frames the log may hold before a commit is followed by a checkpoint.
+pub const CHECKPOINT_FRAMES: u32 = 1000;
+// @end
+
 // @listing offset
 /// Where page `n` starts in the file.
 fn offset(n: PageNo) -> u64 {
@@ -98,6 +104,7 @@ impl Pager {
                 stats: PoolStats::default(),
             },
             wal: None,
+            checkpoint_after: CHECKPOINT_FRAMES,
             // @show
         };
         if pager.storage.size()? == 0 {
@@ -119,6 +126,11 @@ impl Pager {
     // @listing check-header
     fn check_header(&mut self) -> Result<()> {
         let size = self.storage.size()?;
+        // @hide
+        // A header page in the log stands in for one that the file lacks.
+        let in_log = self.wal.as_ref().is_some_and(|wal| wal.holds(0));
+        let size = if in_log { PAGE_SIZE as u64 } else { size };
+        // @show
         if size < PAGE_SIZE as u64 {
             let what = format!("the file is {size} bytes, shorter than one page");
             return Err(Error::Corrupt(what));
@@ -399,8 +411,21 @@ impl Pager {
         storage: Box<dyn Storage>,
         log: Box<dyn Storage>,
     ) -> Result<Pager> {
-        let mut pager = Pager::open(storage)?;
-        pager.wal = Some(Wal::open(log)?);
+        let wal = Wal::open(log)?;
+        let exists = storage.size()? > 0;
+        // @hide
+        let exists = exists || wal.holds(0);
+        // @show
+        // Begin as a new database in memory, and then take up the two files.
+        let mut pager = Pager::open(Box::new(MemFile::new()))?;
+        pager.storage = storage;
+        pager.wal = Some(wal);
+        if exists {
+            // Not new after all: forget the header just made, and read the real one.
+            pager.frames.clear();
+            pager.pool.clock.clear();
+            pager.check_header()?;
+        }
         Ok(pager)
     }
 
@@ -436,7 +461,28 @@ impl Pager {
             wal.append(*n, &frame.page, i == last)?;
             frame.dirty = false;
         }
+        // @hide
+        if wal.frames() >= self.checkpoint_after {
+            self.checkpoint()?;
+        }
+        // @show
         Ok(())
+    }
+    // @end
+
+    // @listing checkpoint
+    /// Moves everything committed from the log into the database file, and empties
+    /// the log. Returns the number of pages moved.
+    pub fn checkpoint(&mut self) -> Result<u32> {
+        let Some(wal) = &mut self.wal else { return Ok(0) };
+        let pages = wal.checkpoint(self.storage.as_mut())?;
+        self.pool.stats.writes += pages as u64;
+        Ok(pages)
+    }
+
+    /// Sets the number of frames at which a commit is followed by a checkpoint.
+    pub fn checkpoint_after(&mut self, frames: u32) {
+        self.checkpoint_after = frames;
     }
     // @end
 

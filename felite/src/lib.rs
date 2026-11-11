@@ -37,7 +37,7 @@ pub use eval::{eval, truth};
 pub use exec::{Filter, Operator, Project, Row, Scan};
 pub use overflow::{OVERFLOW, SPILLED, load, release, store};
 pub use page::{PAGE_SIZE, Page, PageNo};
-pub use pager::{DEFAULT_FRAMES, FREE, MAGIC, Pager, PoolStats};
+pub use pager::{CHECKPOINT_FRAMES, DEFAULT_FRAMES, FREE, MAGIC, Pager, PoolStats};
 pub use query::ResultSet;
 pub use record::{Value, decode, encode};
 pub use shell::{format_rows, respond};
@@ -81,3 +81,4 @@ pub use challenges::ch16::{
 pub use challenges::ch17::{
     NoSync, apply_delta, complete_commits, list_frames, page_delta,
 };
+pub use challenges::ch18::{LogReport, log_report, recovery_reads, to_disks};
