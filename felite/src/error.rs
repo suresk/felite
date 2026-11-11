@@ -15,6 +15,8 @@ pub enum Error {
     DuplicateKey,
     /// A key and payload of this many bytes are too large to store.
     TooLarge(usize),
+    /// The largest possible row id is in use, so there is no next one.
+    OutOfRowIds,
     // @show
 }
 
@@ -30,6 +32,7 @@ impl fmt::Display for Error {
             // @hide
             Error::DuplicateKey => write!(f, "that key is already present"),
             Error::TooLarge(n) => write!(f, "an entry of {n} bytes is too large"),
+            Error::OutOfRowIds => write!(f, "the table has used its last row id"),
             // @show
         }
     }

@@ -9,10 +9,10 @@ mod slotted;
 mod storage;
 mod varint;
 
+pub use btree::{Cursor, Entry, MAX_CELL, TreeInfo, row_id, row_key};
 pub use btree::{
     INTERIOR, LEAF, Tree, interior_cell, leaf_cell, parse_interior, parse_leaf,
 };
-pub use btree::{MAX_CELL, TreeInfo, row_id, row_key};
 pub use dump::hex_dump;
 pub use error::{Error, Result};
 pub use page::{PAGE_SIZE, Page, PageNo};
@@ -32,3 +32,6 @@ pub use challenges::ch03::{
 };
 pub use challenges::ch04::{contains, first_key, last_key, path, separator};
 pub use challenges::ch05::{bulk_load, count, put};
+pub use challenges::ch06::{
+    ReverseCursor, StableCursor, count_range, prefix_end, prefix_scan,
+};
