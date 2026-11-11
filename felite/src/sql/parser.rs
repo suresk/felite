@@ -3,6 +3,7 @@
 use crate::error::{Error, Result};
 use crate::record::Value;
 use crate::sql::ast::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind};
+use crate::sql::ast::{Delete, Update};
 use crate::sql::ast::{Insert, Select, SelectItem, Statement, UnaryOp};
 use crate::sql::token::{Keyword, Span, Symbol, Token, tokenize};
 
@@ -119,6 +120,8 @@ impl Parser {
             Token::Keyword(Keyword::Select) => Statement::Select(self.select()?),
             // @hide
             Token::Keyword(Keyword::Drop) => Statement::DropTable(self.drop_table()?),
+            Token::Keyword(Keyword::Delete) => Statement::Delete(self.delete()?),
+            Token::Keyword(Keyword::Update) => Statement::Update(self.update()?),
             // @show
             _ => return self.expected("a statement"),
         };
@@ -180,6 +183,35 @@ impl Parser {
         self.expect_keyword(Keyword::Drop)?;
         self.expect_keyword(Keyword::Table)?;
         self.name("a table name")
+    }
+    // @end
+
+    // @listing parse-delete-update
+    fn delete(&mut self) -> Result<Delete> {
+        self.expect_keyword(Keyword::Delete)?;
+        self.expect_keyword(Keyword::From)?;
+        let table = self.name("a table name")?;
+        let filter =
+            if self.eat_keyword(Keyword::Where) { Some(self.expr(0)?) } else { None };
+        Ok(Delete { table, filter })
+    }
+
+    fn update(&mut self) -> Result<Update> {
+        self.expect_keyword(Keyword::Update)?;
+        let table = self.name("a table name")?;
+        self.expect_keyword(Keyword::Set)?;
+        let mut assignments = Vec::new();
+        loop {
+            let column = self.name("a column name")?;
+            self.expect_symbol(Symbol::Equal)?;
+            assignments.push((column, self.expr(0)?));
+            if !self.eat_symbol(Symbol::Comma) {
+                break;
+            }
+        }
+        let filter =
+            if self.eat_keyword(Keyword::Where) { Some(self.expr(0)?) } else { None };
+        Ok(Update { table, assignments, filter })
     }
     // @end
 

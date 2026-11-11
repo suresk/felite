@@ -13,6 +13,8 @@ pub enum Statement {
     // @hide
     /// `DROP TABLE name`
     DropTable(String),
+    Delete(Delete),
+    Update(Update),
     // @show
 }
 // @end
@@ -66,6 +68,24 @@ pub struct Select {
 pub enum SelectItem {
     Star,
     Expr { expr: Expr, alias: Option<String> },
+}
+// @end
+
+// @listing delete-update
+/// `DELETE FROM table [WHERE expression]`
+#[derive(Debug, Clone, PartialEq)]
+pub struct Delete {
+    pub table: String,
+    pub filter: Option<Expr>,
+}
+
+/// `UPDATE table SET column = expression, … [WHERE expression]`
+#[derive(Debug, Clone, PartialEq)]
+pub struct Update {
+    pub table: String,
+    /// Each column to change, with the expression for its new value.
+    pub assignments: Vec<(String, Expr)>,
+    pub filter: Option<Expr>,
 }
 // @end
 
@@ -233,6 +253,24 @@ impl fmt::Display for Statement {
             }
             // @hide
             Statement::DropTable(name) => write!(f, "DROP TABLE {name}"),
+            Statement::Delete(delete) => {
+                write!(f, "DELETE FROM {}", delete.table)?;
+                match &delete.filter {
+                    Some(filter) => write!(f, " WHERE {filter}"),
+                    None => Ok(()),
+                }
+            }
+            Statement::Update(update) => {
+                write!(f, "UPDATE {} SET ", update.table)?;
+                for (i, (column, value)) in update.assignments.iter().enumerate() {
+                    let comma = if i > 0 { ", " } else { "" };
+                    write!(f, "{comma}{column} = {value}")?;
+                }
+                match &update.filter {
+                    Some(filter) => write!(f, " WHERE {filter}"),
+                    None => Ok(()),
+                }
+            }
             // @show
             Statement::Select(select) => {
                 write!(f, "SELECT ")?;

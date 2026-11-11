@@ -91,6 +91,8 @@ impl Database {
             // @hide
             Statement::Insert(insert) => self.insert(&insert)?,
             Statement::Select(select) => return self.select(&select),
+            Statement::Delete(delete) => self.delete(&delete)?,
+            Statement::Update(update) => self.update(&update)?,
             #[allow(unreachable_patterns)]
             // @show
             other => {

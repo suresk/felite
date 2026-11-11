@@ -28,6 +28,10 @@ pub struct Scan {
     columns: usize,
     /// The column whose value is the row id, if the table has one.
     key_column: Option<usize>,
+    // @hide
+    /// The row id of the row that `next` returned last.
+    pub row_id: i64,
+    // @show
 }
 
 impl Scan {
@@ -37,6 +41,9 @@ impl Scan {
             cursor,
             columns: table.columns.len(),
             key_column: table.key_column,
+            // @hide
+            row_id: 0,
+            // @show
         })
     }
 }
@@ -46,6 +53,9 @@ impl Operator for Scan {
         let Some((key, stored)) = self.cursor.next(pager)? else {
             return Ok(None);
         };
+        // @hide
+        self.row_id = row_id(&key)?;
+        // @show
         let mut row = decode(&load(pager, stored)?)?;
         if row.len() != self.columns {
             let what = format!(
