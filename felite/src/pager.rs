@@ -3,8 +3,8 @@
 use crate::error::{Error, Result};
 use crate::page::{PAGE_SIZE, Page, PageNo};
 use crate::storage::Storage;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 // @listing header
 /// The first 16 bytes of every felite database.
@@ -36,6 +36,36 @@ struct Frame {
 pub struct Pager {
     storage: Box<dyn Storage>,
     frames: HashMap<PageNo, Frame>,
+    // @hide
+    pool: Pool,
+    // @show
+}
+// @end
+
+// @listing pool
+/// How many pages `Pager::open` will keep in memory: about 8 MB of them.
+pub const DEFAULT_FRAMES: usize = 2000;
+
+/// What the pager keeps in order to choose which page to drop.
+struct Pool {
+    /// The most pages that may be in memory at once.
+    capacity: usize,
+    /// The pages in memory, in the order the clock's hand will come to them.
+    clock: VecDeque<PageNo>,
+    /// The pages that have been used since the hand last passed them.
+    recent: HashSet<PageNo>,
+    stats: PoolStats,
+}
+
+/// Counts of what the pager has done with the file.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PoolStats {
+    /// Pages read from the file.
+    pub reads: u64,
+    /// Pages written to it, by `flush` or to make room.
+    pub writes: u64,
+    /// Pages dropped from memory to make room.
+    pub evictions: u64,
 }
 // @end
 
@@ -50,13 +80,27 @@ impl Pager {
     // @listing open
     /// Opens the database in `storage`. An empty file becomes a new database.
     pub fn open(storage: Box<dyn Storage>) -> Result<Pager> {
-        let mut pager = Pager { storage, frames: HashMap::new() };
+        let mut pager = Pager {
+            storage,
+            frames: HashMap::new(),
+            // @hide
+            pool: Pool {
+                capacity: DEFAULT_FRAMES,
+                clock: VecDeque::new(),
+                recent: HashSet::new(),
+                stats: PoolStats::default(),
+            },
+            // @show
+        };
         if pager.storage.size()? == 0 {
             let mut header = Page::new();
             header.bytes_mut()[..16].copy_from_slice(MAGIC);
             header.put_u32(PAGE_SIZE_AT, PAGE_SIZE as u32);
             header.put_u32(PAGE_COUNT_AT, 1);
             pager.frames.insert(0, Frame { page: header, dirty: true });
+            // @hide
+            pager.pool.clock.push_back(0);
+            // @show
         } else {
             pager.check_header()?;
         }
@@ -87,11 +131,17 @@ impl Pager {
     // @listing load
     /// The frame for page `n`, read from the file if it is not in memory yet.
     fn load(&mut self, n: PageNo) -> Result<&mut Frame> {
+        // @hide
+        self.admit(n)?;
+        // @show
         match self.frames.entry(n) {
             Entry::Occupied(frame) => Ok(frame.into_mut()),
             Entry::Vacant(slot) => {
                 let mut page = Page::new();
                 self.storage.read_at(offset(n), page.bytes_mut())?;
+                // @hide
+                self.pool.stats.reads += 1;
+                // @show
                 Ok(slot.insert(Frame { page, dirty: false }))
             }
         }
@@ -130,6 +180,57 @@ impl Pager {
     }
     // @end
 
+    // @listing with-capacity
+    /// Opens a database with room in memory for `frames` pages, and no more.
+    pub fn with_capacity(storage: Box<dyn Storage>, frames: usize) -> Result<Pager> {
+        let mut pager = Pager::open(storage)?;
+        pager.pool.capacity = frames.max(1);
+        Ok(pager)
+    }
+
+    pub fn stats(&self) -> PoolStats {
+        self.pool.stats
+    }
+    // @end
+
+    // @listing admit
+    /// Called before page `n` is used. If the page is not in memory, this makes
+    /// sure there is room for it, dropping other pages if it has to.
+    fn admit(&mut self, n: PageNo) -> Result<()> {
+        if self.frames.contains_key(&n) {
+            self.pool.recent.insert(n);
+            return Ok(());
+        }
+        while self.frames.len() >= self.pool.capacity {
+            let Some(victim) = self.pool.clock.pop_front() else { break };
+            if self.pool.recent.remove(&victim) {
+                // Used since the hand last came by: it gets another turn.
+                self.pool.clock.push_back(victim);
+            } else if let Err(error) = self.evict(victim) {
+                self.pool.clock.push_front(victim);
+                return Err(error);
+            }
+        }
+        self.pool.clock.push_back(n);
+        Ok(())
+    }
+    // @end
+
+    // @listing evict
+    /// Drops page `n` from memory, writing it to the file first if it has changed.
+    fn evict(&mut self, n: PageNo) -> Result<()> {
+        if let Some(frame) = self.frames.get(&n) {
+            if frame.dirty {
+                self.storage.write_at(offset(n), frame.page.bytes())?;
+                self.pool.stats.writes += 1;
+            }
+            self.frames.remove(&n);
+            self.pool.stats.evictions += 1;
+        }
+        Ok(())
+    }
+    // @end
+
     // @listing pages-in-memory
     /// How many pages the pager is holding in memory right now.
     pub fn pages_in_memory(&self) -> usize {
@@ -149,6 +250,9 @@ impl Pager {
         let header = self.load(0)?;
         header.page.put_u32(PAGE_COUNT_AT, n + 1);
         header.dirty = true;
+        // @hide
+        self.admit(n)?;
+        // @show
         self.frames.insert(n, Frame { page, dirty: true });
         Ok(n)
     }
@@ -172,6 +276,9 @@ impl Pager {
         let mut page = Page::new();
         page.bytes_mut()[0] = FREE;
         page.put_u32(NEXT_FREE_AT, head);
+        // @hide
+        self.admit(n)?;
+        // @show
         self.frames.insert(n, Frame { page, dirty: true });
         Ok(())
     }
@@ -216,6 +323,9 @@ impl Pager {
         dirty.sort_by_key(|(n, _)| **n);
         for (n, frame) in dirty {
             self.storage.write_at(offset(*n), frame.page.bytes())?;
+            // @hide
+            self.pool.stats.writes += 1;
+            // @show
             frame.dirty = false;
         }
         self.storage.sync()?;
