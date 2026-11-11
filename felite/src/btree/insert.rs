@@ -41,7 +41,7 @@ fn key_of(kind: u8, cell: &[u8]) -> Result<&[u8]> {
 
 // @listing page-of
 /// A new page of the given kind holding the given cells, in order.
-fn page_of(kind: u8, cells: &[Vec<u8>]) -> Result<Page> {
+pub(crate) fn page_of(kind: u8, cells: &[Vec<u8>]) -> Result<Page> {
     let mut page = Page::new();
     page.init_slotted(kind);
     for (i, cell) in cells.iter().enumerate() {

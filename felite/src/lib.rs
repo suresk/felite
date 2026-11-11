@@ -16,7 +16,7 @@ pub use btree::{
 pub use dump::hex_dump;
 pub use error::{Error, Result};
 pub use page::{PAGE_SIZE, Page, PageNo};
-pub use pager::{MAGIC, Pager};
+pub use pager::{FREE, MAGIC, Pager};
 pub use record::{Value, decode, encode};
 pub use slotted::{SLOT_SIZE, SLOTTED_HEADER};
 pub use storage::{MemFile, Storage};
@@ -35,3 +35,4 @@ pub use challenges::ch05::{bulk_load, count, put};
 pub use challenges::ch06::{
     ReverseCursor, StableCursor, count_range, prefix_end, prefix_scan,
 };
+pub use challenges::ch07::{account, delete_range, free_pages, rebuild, tree_pages};

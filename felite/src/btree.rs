@@ -2,7 +2,8 @@
 
 mod check;
 mod cursor;
-mod insert;
+mod delete;
+pub(crate) mod insert;
 mod node;
 pub(crate) mod search;
 

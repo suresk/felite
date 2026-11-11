@@ -121,6 +121,9 @@ impl Tree {
         let leaf = descend(self, pager, |page| Ok(page.cell_count() - 1))?;
         let page = pager.page(leaf)?;
         match page.cell_count() {
+            // @hide
+            0 if leaf != self.root() => self.last_key_by_scan(pager),
+            // @show
             0 => Ok(None),
             count => Ok(Some(parse_leaf(page.cell(count - 1)?)?.0.to_vec())),
         }
@@ -135,6 +138,19 @@ impl Tree {
             None => Ok(1),
             Some(key) => row_id(&key)?.checked_add(1).ok_or(Error::OutOfRowIds),
         }
+    }
+    // @end
+
+    // @listing last-key-by-scan
+    /// The largest key, found the slow way: by reading every entry. Used when the
+    /// last leaf is empty, which deletions can bring about.
+    fn last_key_by_scan(&self, pager: &mut Pager) -> Result<Option<Vec<u8>>> {
+        let mut cursor = Cursor::first(self, pager)?;
+        let mut last = None;
+        while let Some((key, _)) = cursor.next(pager)? {
+            last = Some(key);
+        }
+        Ok(last)
     }
     // @end
 }

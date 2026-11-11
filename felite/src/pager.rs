@@ -15,6 +15,17 @@ const PAGE_SIZE_AT: usize = 16;
 const PAGE_COUNT_AT: usize = 20;
 // @end
 
+// @listing free-header
+/// The header's record of the free list: its first page, and how many it holds.
+const FREE_HEAD_AT: usize = 24;
+const FREE_COUNT_AT: usize = 28;
+
+/// The kind of a page that belongs to no tree and is waiting to be used again.
+pub const FREE: u8 = 3;
+/// Where a free page keeps the number of the next free page.
+const NEXT_FREE_AT: usize = 4;
+// @end
+
 // @listing pager
 /// A page in memory, and whether it has changed since it was last written.
 struct Frame {
@@ -129,12 +140,70 @@ impl Pager {
     // @listing allocate
     /// Adds `page` to the end of the database and returns its number.
     pub fn allocate(&mut self, page: Page) -> Result<PageNo> {
+        // @hide
+        if self.load(0)?.page.u32_at(FREE_HEAD_AT) != 0 {
+            return self.reuse(page);
+        }
+        // @show
         let n = self.page_count()?;
         let header = self.load(0)?;
         header.page.put_u32(PAGE_COUNT_AT, n + 1);
         header.dirty = true;
         self.frames.insert(n, Frame { page, dirty: true });
         Ok(n)
+    }
+    // @end
+
+    // @listing free
+    /// Gives page `n` up. It joins the front of the free list, and a later call to
+    /// `allocate` will hand it out again.
+    pub fn free(&mut self, n: PageNo) -> Result<()> {
+        self.check_in_file(n)?;
+        if n == 0 || self.load(n)?.page.bytes()[0] == FREE {
+            return Err(Error::Corrupt(format!("page {n} cannot be freed")));
+        }
+        let header = self.load(0)?;
+        let head = header.page.u32_at(FREE_HEAD_AT);
+        let count = header.page.u32_at(FREE_COUNT_AT);
+        header.page.put_u32(FREE_HEAD_AT, n);
+        header.page.put_u32(FREE_COUNT_AT, count + 1);
+        header.dirty = true;
+
+        let mut page = Page::new();
+        page.bytes_mut()[0] = FREE;
+        page.put_u32(NEXT_FREE_AT, head);
+        self.frames.insert(n, Frame { page, dirty: true });
+        Ok(())
+    }
+    // @end
+
+    // @listing reuse
+    /// Takes the first page off the free list and gives it the contents `page`.
+    fn reuse(&mut self, page: Page) -> Result<PageNo> {
+        let n = self.load(0)?.page.u32_at(FREE_HEAD_AT);
+        self.check_in_file(n)?;
+        let frame = self.load(n)?;
+        if frame.page.bytes()[0] != FREE {
+            return Err(Error::Corrupt(format!(
+                "page {n} is on the free list in use"
+            )));
+        }
+        let next = frame.page.u32_at(NEXT_FREE_AT);
+        *frame = Frame { page, dirty: true };
+
+        let header = self.load(0)?;
+        let count = header.page.u32_at(FREE_COUNT_AT);
+        header.page.put_u32(FREE_HEAD_AT, next);
+        header.page.put_u32(FREE_COUNT_AT, count.saturating_sub(1));
+        header.dirty = true;
+        Ok(n)
+    }
+    // @end
+
+    // @listing free-count
+    /// How many pages are on the free list.
+    pub fn free_count(&mut self) -> Result<u32> {
+        Ok(self.load(0)?.page.u32_at(FREE_COUNT_AT))
     }
     // @end
 
