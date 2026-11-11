@@ -233,7 +233,10 @@ fn good_error_messages() {
         message("CREATE TABLE select (id INTEGER)"),
         "expected a table name, found `SELECT`"
     );
-    assert_eq!(message("DROP TABLE t"), "expected a statement, found `DROP`");
+    assert_eq!(
+        message("ALTER TABLE t"),
+        "expected a statement, found the name `ALTER`"
+    );
     assert_eq!(message("a IS 3"), "expected a statement, found the name `a`");
     // An error from the tokenizer comes through unchanged.
     assert_eq!(message("SELECT 'oops FROM t"), "this string is never closed");

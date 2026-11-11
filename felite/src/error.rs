@@ -20,6 +20,8 @@ pub enum Error {
     OutOfRowIds,
     /// The SQL could not be understood. The span says where.
     Syntax(String, Span),
+    /// The SQL is well-formed and asks for something that cannot be done.
+    Sql(String),
     // @show
 }
 
@@ -36,6 +38,7 @@ impl fmt::Display for Error {
             Error::DuplicateKey => write!(f, "that key is already present"),
             Error::TooLarge(n) => write!(f, "an entry of {n} bytes is too large"),
             Error::OutOfRowIds => write!(f, "the table has used its last row id"),
+            Error::Sql(message) => write!(f, "{message}"),
             Error::Syntax(message, at) => {
                 write!(
                     f,

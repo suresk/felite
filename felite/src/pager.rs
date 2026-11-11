@@ -26,6 +26,11 @@ pub const FREE: u8 = 3;
 const NEXT_FREE_AT: usize = 4;
 // @end
 
+// @listing schema-header
+/// Where the header keeps the root page of the schema table.
+const SCHEMA_ROOT_AT: usize = 32;
+// @end
+
 // @listing pager
 /// A page in memory, and whether it has changed since it was last written.
 struct Frame {
@@ -311,6 +316,20 @@ impl Pager {
     /// How many pages are on the free list.
     pub fn free_count(&mut self) -> Result<u32> {
         Ok(self.load(0)?.page.u32_at(FREE_COUNT_AT))
+    }
+    // @end
+
+    // @listing schema-root
+    /// The root page of the table that lists the tables, or 0 if there is none yet.
+    pub fn schema_root(&mut self) -> Result<PageNo> {
+        Ok(self.load(0)?.page.u32_at(SCHEMA_ROOT_AT))
+    }
+
+    pub fn set_schema_root(&mut self, root: PageNo) -> Result<()> {
+        let header = self.load(0)?;
+        header.page.put_u32(SCHEMA_ROOT_AT, root);
+        header.dirty = true;
+        Ok(())
     }
     // @end
 

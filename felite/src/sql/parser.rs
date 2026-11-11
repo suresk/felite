@@ -117,6 +117,9 @@ impl Parser {
             }
             Token::Keyword(Keyword::Insert) => Statement::Insert(self.insert()?),
             Token::Keyword(Keyword::Select) => Statement::Select(self.select()?),
+            // @hide
+            Token::Keyword(Keyword::Drop) => Statement::DropTable(self.drop_table()?),
+            // @show
             _ => return self.expected("a statement"),
         };
         self.eat_symbol(Symbol::Semicolon);
@@ -169,6 +172,14 @@ impl Parser {
                 return Ok(column);
             }
         }
+    }
+    // @end
+
+    // @listing parse-drop
+    fn drop_table(&mut self) -> Result<String> {
+        self.expect_keyword(Keyword::Drop)?;
+        self.expect_keyword(Keyword::Table)?;
+        self.name("a table name")
     }
     // @end
 

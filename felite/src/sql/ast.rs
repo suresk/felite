@@ -10,6 +10,10 @@ pub enum Statement {
     CreateTable(CreateTable),
     Insert(Insert),
     Select(Select),
+    // @hide
+    /// `DROP TABLE name`
+    DropTable(String),
+    // @show
 }
 // @end
 
@@ -227,6 +231,9 @@ impl fmt::Display for Statement {
                 list(f, &insert.values)?;
                 write!(f, ")")
             }
+            // @hide
+            Statement::DropTable(name) => write!(f, "DROP TABLE {name}"),
+            // @show
             Statement::Select(select) => {
                 write!(f, "SELECT ")?;
                 list(f, &select.items)?;

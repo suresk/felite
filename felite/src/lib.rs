@@ -1,5 +1,7 @@
 mod btree;
+mod catalog;
 mod challenges;
+mod db;
 mod dump;
 mod error;
 mod overflow;
@@ -15,6 +17,8 @@ pub use btree::{Cursor, Entry, MAX_CELL, TreeInfo, row_id, row_key};
 pub use btree::{
     INTERIOR, LEAF, Tree, interior_cell, leaf_cell, parse_interior, parse_leaf,
 };
+pub use catalog::Table;
+pub use db::{Database, Output};
 pub use dump::hex_dump;
 pub use error::{Error, Result};
 pub use overflow::{OVERFLOW, SPILLED, load, release, store};
@@ -46,3 +50,6 @@ pub use challenges::ch08::{account_rows, load_range, update_row};
 pub use challenges::ch09::{Shared, SharedPool, clock_misses, lru_misses};
 pub use challenges::ch10::{hex_literal, scan_quoted, strip_block_comments, to_sql};
 pub use challenges::ch11::{columns_used, depth, to_minimal_sql};
+pub use challenges::ch12::{
+    account_database, create_if_missing, rename_table, schema_dump,
+};
