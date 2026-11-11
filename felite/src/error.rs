@@ -22,6 +22,8 @@ pub enum Error {
     Syntax(String, Span),
     /// The SQL is well-formed and asks for something that cannot be done.
     Sql(String),
+    /// The same, when the trouble is at a known place in the statement.
+    Invalid(String, Span),
     // @show
 }
 
@@ -39,6 +41,13 @@ impl fmt::Display for Error {
             Error::TooLarge(n) => write!(f, "an entry of {n} bytes is too large"),
             Error::OutOfRowIds => write!(f, "the table has used its last row id"),
             Error::Sql(message) => write!(f, "{message}"),
+            Error::Invalid(message, at) => {
+                write!(
+                    f,
+                    "error at line {}, column {}: {message}",
+                    at.line, at.column
+                )
+            }
             Error::Syntax(message, at) => {
                 write!(
                     f,

@@ -300,6 +300,13 @@ pub fn tokenize(source: &str) -> Result<Vec<(Token, Span)>> {
 /// An error as a person would want to read it. A syntax error is shown with the
 /// line it is on and a mark under the place.
 pub fn explain(source: &str, error: &Error) -> String {
+    // @hide
+    if let Error::Invalid(message, span) = error {
+        let line = source.lines().nth(span.line as usize - 1).unwrap_or("");
+        let indent = " ".repeat(span.column as usize - 1);
+        return format!("error: {message}\n  {line}\n  {indent}^\n");
+    }
+    // @show
     let Error::Syntax(message, span) = error else {
         return error.to_string();
     };

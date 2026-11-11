@@ -1,9 +1,11 @@
+mod bind;
 mod btree;
 mod catalog;
 mod challenges;
 mod db;
 mod dump;
 mod error;
+mod eval;
 mod overflow;
 mod page;
 mod pager;
@@ -13,6 +15,7 @@ mod sql;
 mod storage;
 mod varint;
 
+pub use bind::{Bound, BoundKind, Scope, ScopeColumn, Type, bind, bind_condition};
 pub use btree::{Cursor, Entry, MAX_CELL, TreeInfo, row_id, row_key};
 pub use btree::{
     INTERIOR, LEAF, Tree, interior_cell, leaf_cell, parse_interior, parse_leaf,
@@ -21,6 +24,7 @@ pub use catalog::Table;
 pub use db::{Database, Output};
 pub use dump::hex_dump;
 pub use error::{Error, Result};
+pub use eval::{eval, truth};
 pub use overflow::{OVERFLOW, SPILLED, load, release, store};
 pub use page::{PAGE_SIZE, Page, PageNo};
 pub use pager::{DEFAULT_FRAMES, FREE, MAGIC, Pager, PoolStats};
@@ -53,3 +57,4 @@ pub use challenges::ch11::{columns_used, depth, to_minimal_sql};
 pub use challenges::ch12::{
     account_database, create_if_missing, rename_table, schema_dump,
 };
+pub use challenges::ch13::{can_be_null, cast, fold_constants, like};
