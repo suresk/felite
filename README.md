@@ -34,6 +34,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 15:
 | 13 | Expressions and NULL | `src/bind.rs`, `src/eval.rs` |
 | 14 | INSERT and SELECT | `src/exec.rs`, `src/query.rs`, `src/insert.rs`, `src/shell.rs`, `src/bin/felite.rs` |
 | 15 | UPDATE and DELETE | `src/modify.rs` |
+| 16 | What a crash does | `src/crash.rs`, `src/check.rs` |
 
 Paths are inside `felite/`. Still to come: the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code

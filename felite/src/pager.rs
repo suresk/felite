@@ -319,6 +319,27 @@ impl Pager {
     }
     // @end
 
+    // @listing check-free-list
+    /// Walks the free list, checking each page on it, and returns its length.
+    pub fn check_free_list(&mut self) -> Result<u32> {
+        let count = self.free_count()?;
+        let mut next = self.load(0)?.page.u32_at(FREE_HEAD_AT);
+        for _ in 0..count {
+            let page = self.page(next)?;
+            if next == 0 || page.bytes()[0] != FREE {
+                let what = format!("page {next} is on the free list and is not free");
+                return Err(Error::Corrupt(what));
+            }
+            next = page.u32_at(NEXT_FREE_AT);
+        }
+        if next != 0 {
+            let what = format!("the free list runs on past its {count} pages");
+            return Err(Error::Corrupt(what));
+        }
+        Ok(count)
+    }
+    // @end
+
     // @listing schema-root
     /// The root page of the table that lists the tables, or 0 if there is none yet.
     pub fn schema_root(&mut self) -> Result<PageNo> {

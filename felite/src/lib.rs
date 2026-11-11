@@ -2,6 +2,8 @@ mod bind;
 mod btree;
 mod catalog;
 mod challenges;
+mod check;
+mod crash;
 mod db;
 mod dump;
 mod error;
@@ -26,6 +28,7 @@ pub use btree::{
     INTERIOR, LEAF, Tree, interior_cell, leaf_cell, parse_interior, parse_leaf,
 };
 pub use catalog::Table;
+pub use crash::{CrashDisk, Fate, SECTOR};
 pub use db::{Database, Output};
 pub use dump::hex_dump;
 pub use error::{Error, Result};
@@ -69,3 +72,6 @@ pub use challenges::ch12::{
 pub use challenges::ch13::{can_be_null, cast, fold_constants, like};
 pub use challenges::ch14::{Counted, Distinct, insert_select, insert_values};
 pub use challenges::ch15::{delete_returning, truncate_table, would_affect};
+pub use challenges::ch16::{
+    SyncEach, byte_sum, checksum, free_list_damage, pages_written,
+};
