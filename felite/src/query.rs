@@ -6,6 +6,7 @@ use crate::catalog::fold;
 use crate::db::{Database, Output};
 use crate::error::Result;
 use crate::exec::{Filter, Limit, Operator, Project, Row, Scan};
+use crate::record::Value;
 use crate::sort::{Sort, SortKey};
 use crate::sql::{Expr, ExprKind, OrderKey, Select, SelectItem, Span};
 
@@ -58,6 +59,16 @@ pub(crate) fn select_list(
 /// The expression that a key of an ORDER BY stands for. A key that is the name
 /// given to something in the SELECT list means that expression.
 pub(crate) fn key_expr<'a>(select: &'a Select, key: &'a OrderKey) -> &'a Expr {
+    // @hide
+    // A key that is a whole number is the position of a result column.
+    if let ExprKind::Literal(Value::Integer(position)) = key.expr.kind {
+        let item =
+            usize::try_from(position - 1).ok().and_then(|at| select.items.get(at));
+        if let Some(SelectItem::Expr { expr, .. }) = item {
+            return expr;
+        }
+    }
+    // @show
     let ExprKind::Column { table: None, name } = &key.expr.kind else {
         return &key.expr;
     };

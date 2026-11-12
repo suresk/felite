@@ -60,6 +60,9 @@ pub fn respond(db: &mut Database, input: &str) -> String {
             // @show
             db.tables().map(define).collect()
         }
+        // @hide
+        command if command.starts_with(".import ") => import_command(db, command),
+        // @show
         sql => match db.execute(sql) {
             Ok(Output::Done) => "ok\n".to_string(),
             Ok(Output::Count(1)) => "1 row\n".to_string(),
@@ -78,6 +81,24 @@ pub fn respond(db: &mut Database, input: &str) -> String {
                 text => format!("error: {text}\n"),
             },
         },
+    }
+}
+// @end
+
+// @listing import-command
+/// `.import FILE TABLE`: loads a file of comma-separated values into a table.
+fn import_command(db: &mut Database, command: &str) -> String {
+    let words: Vec<&str> = command.split_whitespace().collect();
+    let [_, path, table] = words.as_slice() else {
+        return "usage: .import FILE TABLE\n".to_string();
+    };
+    let imported = match std::fs::File::open(path) {
+        Ok(file) => db.import(table, &mut std::io::BufReader::new(file)),
+        Err(error) => Err(error.into()),
+    };
+    match imported {
+        Ok(rows) => format!("{rows} rows\n"),
+        Err(error) => format!("error: {error}\n"),
     }
 }
 // @end

@@ -43,6 +43,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 15:
 | 22 | Joins | `src/join.rs` |
 | 23 | Secondary indexes | `src/keys.rs`, `src/index.rs` |
 | 24 | A query planner | `src/plan.rs` |
+| 25 | The scoreboard | `src/csv.rs`, `src/slt.rs`, `examples/load.rs`, `examples/queries.rs` |
 
 Paths are inside `felite/`. Still to come: the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code
@@ -59,6 +60,8 @@ $ cargo run --example first_db     # makes first.db, a three-page database (Chap
 $ cargo xtask dump first.db 2      # a page of it as a hex dump
 $ cargo xtask cells some.db 3      # the cells of a slotted page (Chapter 3)
 $ cargo xtask check 4              # one chapter's tests
+$ cargo run --release -p xtask -- data   # the full flight data set, into data/ (Chapter 25)
+$ cargo xtask slt                  # sqllogictest scripts against felite (Chapter 25)
 $ cargo run --bin felite -- my.db   # a prompt: type SQL, end each statement with ;
 ```
 
@@ -91,6 +94,15 @@ let n = pager.allocate(page).unwrap();
 let stored = pager.page(n).unwrap().cell(0).unwrap();
 assert_eq!(decode(stored).unwrap(), row);
 ```
+
+## Data and test files
+
+`felite/fixtures/flights.sql` is a sample of the US Bureau of Transportation Statistics'
+on-time performance data for January 2024, a work of the US government. `cargo xtask data`
+downloads the full months from the Bureau and checks that the sample still matches.
+`felite/fixtures/select1.test` is from sqllogictest, which the SQLite project wrote and placed
+in the public domain. `felite/fixtures/airports.sqlite` was made with SQLite from the same
+airports, for the last challenge of the book.
 
 ## Found a mistake?
 

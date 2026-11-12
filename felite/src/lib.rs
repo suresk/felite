@@ -5,6 +5,7 @@ mod catalog;
 mod challenges;
 mod check;
 mod crash;
+mod csv;
 mod db;
 mod dump;
 mod error;
@@ -23,6 +24,7 @@ mod query;
 mod record;
 mod shell;
 mod slotted;
+mod slt;
 mod sort;
 mod sql;
 mod storage;
@@ -38,6 +40,7 @@ pub use btree::{
 };
 pub use catalog::Table;
 pub use crash::{CrashDisk, Fate, SECTOR};
+pub use csv::{IMPORT_BATCH, read_record};
 pub use db::{Database, Output};
 pub use dump::hex_dump;
 pub use error::{Error, Result};
@@ -54,6 +57,7 @@ pub use query::ResultSet;
 pub use record::{Value, decode, encode};
 pub use shell::{format_rows, respond};
 pub use slotted::{SLOT_SIZE, SLOTTED_HEADER};
+pub use slt::{SltReport, md5, run_slt};
 pub use sort::{SORT_BUDGET, Sort, SortKey, SortStats};
 pub use sql::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind, Insert};
 pub use sql::{CreateIndex, Delete, Function, Join, OrderKey, Update};
@@ -106,3 +110,4 @@ pub use challenges::ch23::{
     IndexLoop, decode_key, drop_index, encode_key_desc, index_only,
 };
 pub use challenges::ch24::{distinct_counts, join_orders, selectivity};
+pub use challenges::ch25::{dump_sql, sqlite_first_table};

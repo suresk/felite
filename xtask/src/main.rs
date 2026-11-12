@@ -2,6 +2,11 @@
 //! challenges) and says which ones still fail. `cargo xtask check all` runs them all.
 //! `cargo xtask dump file.db [page]` prints one page of a database file, and
 //! `cargo xtask cells file.db page` lists the cells of a slotted page.
+//! `cargo xtask data` fetches the example data set (Chapter 25), and
+//! `cargo xtask slt [script …]` runs sqllogictest scripts against felite.
+
+mod data;
+mod slt;
 
 use felite::{PAGE_SIZE, Page, hex_dump};
 use std::fs::File;
@@ -25,7 +30,19 @@ fn main() -> ExitCode {
             Ok(page) => report(cells(path, page)),
             Err(_) => usage(),
         },
+        ["data"] => outcome(data::data()),
+        ["slt", ..] => outcome(slt::slt(&args[1..])),
         _ => usage(),
+    }
+}
+
+fn outcome(result: Result<(), Box<dyn std::error::Error>>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -33,6 +50,8 @@ fn usage() -> ExitCode {
     eprintln!("usage: cargo xtask check <chapter>|all");
     eprintln!("       cargo xtask dump <file> [page]");
     eprintln!("       cargo xtask cells <file> <page>");
+    eprintln!("       cargo xtask data");
+    eprintln!("       cargo xtask slt [script ...]");
     ExitCode::from(2)
 }
 

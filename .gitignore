@@ -1,3 +1,6 @@
 target/
 *.db
 *.db-wal
+data/
+*.db-log
+*-temp*
