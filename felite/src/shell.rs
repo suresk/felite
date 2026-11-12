@@ -48,6 +48,16 @@ pub fn respond(db: &mut Database, input: &str) -> String {
                 let create = Statement::CreateTable(CreateTable { name, columns });
                 format!("{create};\n")
             };
+            // @hide
+            let indexes = |table: &Table| -> String {
+                table
+                    .indexes
+                    .iter()
+                    .map(|index| format!("{};\n", index.sql()))
+                    .collect()
+            };
+            let define = |table: &Table| define(table) + &indexes(table);
+            // @show
             db.tables().map(define).collect()
         }
         sql => match db.execute(sql) {

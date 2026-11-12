@@ -2,6 +2,7 @@
 
 use crate::btree::Tree;
 use crate::error::{Error, Result};
+use crate::index::Index;
 use crate::page::PageNo;
 use crate::record::{Value, decode, encode};
 use crate::sql::{ColumnDef, ColumnType, CreateTable, Statement, parse};
@@ -18,6 +19,10 @@ pub struct Table {
     pub key_column: Option<usize>,
     /// The row id of this table's row in the schema table.
     pub schema_row: i64,
+    // @hide
+    /// The table's indexes, in the order they were created.
+    pub indexes: Vec<Index>,
+    // @show
 }
 // @end
 
@@ -109,6 +114,9 @@ impl Table {
             tree: Tree::open(root),
             key_column,
             schema_row,
+            // @hide
+            indexes: Vec::new(),
+            // @show
         })
     }
     // @end

@@ -52,6 +52,9 @@ impl Operator for Distinct {
 /// flushed. Returns the new row's id.
 pub fn insert_values(db: &mut Database, table: &str, mut row: Row) -> Result<i64> {
     let table = db.table(table)?.clone();
+    // @hide
+    crate::index::no_indexes(&table)?;
+    // @show
     if row.len() != table.columns.len() {
         return sql_error(format!(
             "{} values for {} columns",

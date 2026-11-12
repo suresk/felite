@@ -18,6 +18,7 @@ pub enum Statement {
     Begin,
     Commit,
     Rollback,
+    CreateIndex(CreateIndex),
     // @show
 }
 // @end
@@ -44,6 +45,17 @@ pub enum ColumnType {
     Integer,
     Real,
     Text,
+}
+// @end
+
+// @listing create-index
+/// `CREATE [UNIQUE] INDEX name ON table (column, …)`
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateIndex {
+    pub name: String,
+    pub table: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
 }
 // @end
 
@@ -420,6 +432,16 @@ impl fmt::Display for Statement {
                     Some(filter) => write!(f, " WHERE {filter}"),
                     None => Ok(()),
                 }
+            }
+            Statement::CreateIndex(create) => {
+                let unique = if create.unique { "UNIQUE " } else { "" };
+                write!(
+                    f,
+                    "CREATE {unique}INDEX {} ON {} (",
+                    create.name, create.table
+                )?;
+                list(f, &create.columns)?;
+                write!(f, ")")
             }
             Statement::Begin => write!(f, "BEGIN"),
             Statement::Commit => write!(f, "COMMIT"),

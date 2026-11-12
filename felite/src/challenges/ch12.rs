@@ -40,6 +40,9 @@ pub fn create_if_missing(db: &mut Database, sql: &str) -> Result<bool> {
 /// Gives a table a new name. Its rows and its pages are untouched.
 pub fn rename_table(db: &mut Database, old: &str, new: &str) -> Result<()> {
     let mut table = db.table(old)?.clone();
+    // @hide
+    crate::index::no_indexes(&table)?;
+    // @show
     if fold(old) != fold(new) && db.table(new).is_ok() {
         return sql_error(format!("there is already a table named {new}"));
     }

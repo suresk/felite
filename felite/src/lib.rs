@@ -10,8 +10,10 @@ mod dump;
 mod error;
 mod eval;
 mod exec;
+mod index;
 mod insert;
 mod join;
+mod keys;
 mod modify;
 mod overflow;
 mod page;
@@ -40,7 +42,9 @@ pub use dump::hex_dump;
 pub use error::{Error, Result};
 pub use eval::{eval, order, truth};
 pub use exec::{Filter, Limit, Operator, Project, Row, Scan};
+pub use index::{Index, IndexScan};
 pub use join::{HashJoin, NestedLoop};
+pub use keys::{after, encode_key};
 pub use overflow::{OVERFLOW, SPILLED, load, release, store};
 pub use page::{PAGE_SIZE, Page, PageNo};
 pub use pager::{CHECKPOINT_FRAMES, DEFAULT_FRAMES, FREE, MAGIC, Pager, PoolStats};
@@ -50,7 +54,7 @@ pub use shell::{format_rows, respond};
 pub use slotted::{SLOT_SIZE, SLOTTED_HEADER};
 pub use sort::{SORT_BUDGET, Sort, SortKey, SortStats};
 pub use sql::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind, Insert};
-pub use sql::{Delete, Function, Join, OrderKey, Update};
+pub use sql::{CreateIndex, Delete, Function, Join, OrderKey, Update};
 pub use sql::{Keyword, Span, Symbol, Token, explain, tokenize};
 pub use sql::{Select, SelectItem, Statement, UnaryOp, parse, parse_expr};
 pub use storage::{MemFile, Storage, TempFile, TempSpace};
@@ -96,3 +100,6 @@ pub use challenges::ch20::{
 };
 pub use challenges::ch21::{Fnv, SortedCount, count_distinct, hash_counts, median};
 pub use challenges::ch22::{merge_join, partitioned_join};
+pub use challenges::ch23::{
+    IndexLoop, decode_key, drop_index, encode_key_desc, index_only,
+};

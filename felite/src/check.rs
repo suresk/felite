@@ -32,6 +32,13 @@ impl Database {
                 }
             }
         }
+        // @hide
+        for table in self.tables.clone().values() {
+            for index in &table.indexes {
+                pages += self.check_index(table, index)?;
+            }
+        }
+        // @show
         let count = self.pager.page_count()? as usize;
         if pages != count {
             let what = format!("{pages} pages are accounted for, of {count}");

@@ -42,6 +42,11 @@ impl Database {
     pub(crate) fn delete(&mut self, delete: &Delete) -> Result<Output> {
         let table = self.table(&delete.table)?.clone();
         let doomed = self.matching(&table, &delete.filter)?;
+        // @hide
+        for (id, row) in &doomed {
+            table.unindex_row(&mut self.pager, *id, row)?;
+        }
+        // @show
         for (id, _) in &doomed {
             table.tree.delete_row(&mut self.pager, *id)?;
         }
@@ -134,6 +139,16 @@ impl Database {
             new.push(new_row(&table, &sets, *id, row)?);
         }
         self.check_new_ids(&table, &old, &new)?;
+        // @hide
+        let leaving: BTreeSet<i64> = old.iter().map(|(id, _)| *id).collect();
+        table.check_indexes(&mut self.pager, &leaving, &new)?;
+        for (id, row) in &old {
+            table.unindex_row(&mut self.pager, *id, row)?;
+        }
+        for (id, row) in &new {
+            table.index_row(&mut self.pager, *id, row)?;
+        }
+        // @show
         for (id, _) in &old {
             table.tree.delete_row(&mut self.pager, *id)?;
         }

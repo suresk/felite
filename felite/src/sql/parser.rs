@@ -2,6 +2,7 @@
 
 use crate::error::{Error, Result};
 use crate::record::Value;
+use crate::sql::ast::CreateIndex;
 use crate::sql::ast::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind};
 use crate::sql::ast::{Delete, Function, Join, OrderKey, Update};
 use crate::sql::ast::{Insert, Select, SelectItem, Statement, UnaryOp};
@@ -113,6 +114,11 @@ impl Parser {
     // @listing statement
     fn statement(&mut self) -> Result<Statement> {
         let statement = match self.peek() {
+            // @hide
+            Token::Keyword(Keyword::Create) if !self.next_is_table() => {
+                Statement::CreateIndex(self.create_index()?)
+            }
+            // @show
             Token::Keyword(Keyword::Create) => {
                 Statement::CreateTable(self.create_table()?)
             }
@@ -303,6 +309,45 @@ impl Parser {
 }
 
 impl Parser {
+    // @listing parse-create-index
+    /// Whether the token after the next one is TABLE.
+    fn next_is_table(&self) -> bool {
+        let after = self.tokens.get(self.at + 1);
+        matches!(after, Some((Token::Keyword(Keyword::Table), _)))
+    }
+
+    /// Moves past a word that is not a keyword, if it is next.
+    fn eat_word(&mut self, word: &str) -> bool {
+        let found = match self.peek() {
+            Token::Ident(name) => name.eq_ignore_ascii_case(word),
+            _ => false,
+        };
+        if found {
+            self.advance();
+        }
+        found
+    }
+
+    /// `CREATE [UNIQUE] INDEX name ON table (column, …)`
+    fn create_index(&mut self) -> Result<CreateIndex> {
+        self.expect_keyword(Keyword::Create)?;
+        let unique = self.eat_word("unique");
+        if !self.eat_keyword(Keyword::Index) {
+            return self.expected("`TABLE` or `INDEX`");
+        }
+        let name = self.name("a name for the index")?;
+        self.expect_keyword(Keyword::On)?;
+        let table = self.name("a table name")?;
+        self.expect_symbol(Symbol::LeftParen)?;
+        let mut columns = vec![self.name("a column name")?];
+        while self.eat_symbol(Symbol::Comma) {
+            columns.push(self.name("a column name")?);
+        }
+        self.expect_symbol(Symbol::RightParen)?;
+        Ok(CreateIndex { name, table, columns, unique })
+    }
+    // @end
+
     // @listing parse-joins
     /// `[[AS] name]`, after the name of a table.
     fn alias(&mut self) -> Result<Option<String>> {

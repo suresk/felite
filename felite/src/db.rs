@@ -3,6 +3,7 @@
 use crate::btree::{Cursor, Tree, row_id};
 use crate::catalog::{Table, fold, key_column, sql_error};
 use crate::error::Result;
+use crate::index::{attach_indexes, index_in_schema};
 use crate::overflow::load;
 use crate::pager::Pager;
 use crate::query::ResultSet;
@@ -79,12 +80,24 @@ impl Database {
             root => Tree::open(root),
         };
         let mut tables = BTreeMap::new();
+        // @hide
+        let mut indexes = Vec::new();
+        // @show
         let mut cursor = Cursor::first(&schema, pager)?;
         while let Some((key, stored)) = cursor.next(pager)? {
             let record = load(pager, stored)?;
+            // @hide
+            if let Some(found) = index_in_schema(row_id(&key)?, &record)? {
+                indexes.push(found);
+                continue;
+            }
+            // @show
             let table = Table::from_schema(row_id(&key)?, &record)?;
             tables.insert(fold(&table.name), table);
         }
+        // @hide
+        attach_indexes(&mut tables, indexes)?;
+        // @show
         Ok((schema, tables))
     }
     // @end
@@ -164,6 +177,7 @@ impl Database {
             Statement::Select(select) => self.select(&select),
             Statement::Delete(delete) => self.delete(&delete),
             Statement::Update(update) => self.update(&update),
+            Statement::CreateIndex(create) => self.create_index(create),
             Statement::Begin | Statement::Commit | Statement::Rollback => {
                 sql_error("a database with no log has no transactions".to_string())
             }
@@ -189,6 +203,9 @@ impl Database {
             tree: Tree::create(&mut self.pager)?,
             key_column,
             schema_row: self.schema.next_row_id(&mut self.pager)?,
+            // @hide
+            indexes: Vec::new(),
+            // @show
         };
         self.schema.insert_row(
             &mut self.pager,
@@ -203,6 +220,12 @@ impl Database {
     // @listing drop-table
     fn drop_table(&mut self, name: &str) -> Result<Output> {
         let table = self.table(name)?.clone();
+        // @hide
+        for index in &table.indexes {
+            index.tree.destroy(&mut self.pager)?;
+            self.schema.delete_row(&mut self.pager, index.schema_row)?;
+        }
+        // @show
         table.tree.destroy_rows(&mut self.pager)?;
         self.schema.delete_row(&mut self.pager, table.schema_row)?;
         self.tables.remove(&fold(name));

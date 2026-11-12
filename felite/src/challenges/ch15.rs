@@ -13,6 +13,9 @@ use crate::sql::{Statement, parse, parse_expr};
 /// Returns nothing about the rows, because it never looks at them.
 pub fn truncate_table(db: &mut Database, name: &str) -> Result<()> {
     let mut table = db.table(name)?.clone();
+    // @hide
+    crate::index::no_indexes(&table)?;
+    // @show
     table.tree.destroy_rows(&mut db.pager)?;
     table.tree = Tree::create(&mut db.pager)?;
     // The new tree may have a different root, so the catalog is told.
@@ -32,6 +35,9 @@ pub fn delete_returning(
     condition: &str,
 ) -> Result<Vec<Row>> {
     let table = db.table(table)?.clone();
+    // @hide
+    crate::index::no_indexes(&table)?;
+    // @show
     let doomed = db.matching(&table, &Some(parse_expr(condition)?))?;
     for (id, _) in &doomed {
         table.tree.delete_row(&mut db.pager, *id)?;

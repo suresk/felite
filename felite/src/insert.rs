@@ -7,6 +7,7 @@ use crate::error::{Error, Result};
 use crate::eval::eval;
 use crate::record::{Value, encode};
 use crate::sql::{ColumnDef, Expr, Insert};
+use std::collections::BTreeSet;
 
 // @listing targets
 /// The position in the table of each column an INSERT names, in the order it
@@ -86,6 +87,15 @@ impl Database {
                 return sql_error(format!("the column {name} cannot be NULL"));
             }
         }
+        // @hide
+        // The row goes into the indexes first, unless its id is taken, in which
+        // case the insert below will refuse it.
+        if table.tree.get_row(&mut self.pager, id)?.is_none() {
+            let arriving = [(id, row.clone())];
+            table.check_indexes(&mut self.pager, &BTreeSet::new(), &arriving)?;
+            table.index_row(&mut self.pager, id, &row)?;
+        }
+        // @show
         let name = &table.name;
         match table.tree.insert_row(&mut self.pager, id, &encode(&row)) {
             Err(Error::DuplicateKey) => {
