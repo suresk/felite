@@ -1,6 +1,6 @@
 //! The examples in Chapter 23: `cargo test --test book_ch23`.
-use felite::{Database, IndexScan, MemFile, Operator, Output, Pager, Row, Value};
-use felite::{Statement, after, encode_key, order, parse, respond};
+use felite::{Database, IndexScan, MemFile, Operator, Output, Pager, Row, Scan};
+use felite::{Statement, Value, after, encode_key, order, parse, respond};
 use std::collections::BTreeMap;
 
 /// The example data, loaded into a database in memory, and the database's file.
@@ -443,9 +443,16 @@ fn what_an_index_saves() {
     // The scan, for comparison: every leaf of the table, once.
     let pager = Pager::with_capacity(Box::new(file.clone()), 20).unwrap();
     let mut db = Database::with_pager(pager).unwrap();
+    let table = db.table("log").unwrap().clone();
     let before = db.pager().stats().reads;
-    assert_eq!(query(&mut db, "SELECT id FROM log WHERE airport = 7").len(), 44);
-    assert_eq!(db.pager().stats().reads - before, 104);
+    let mut scan = Scan::new(&table, db.pager()).unwrap();
+    let mut found = 0;
+    while let Some(row) = scan.next(db.pager()).unwrap() {
+        if row[1] == Value::Integer(7) {
+            found += 1;
+        }
+    }
+    assert_eq!((found, db.pager().stats().reads - before), (44, 104));
     // @end
 }
 

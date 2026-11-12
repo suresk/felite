@@ -97,7 +97,7 @@ fn names_with_two_parts() {
         query(
             &mut db,
             "SELECT id, name FROM flights JOIN carriers ON carrier = carriers.code
-             WHERE delay > 200"
+             WHERE delay > 200 ORDER BY id"
         ),
         [
             "38304 American Airlines Inc.",
@@ -246,7 +246,8 @@ fn joins_in_sql() {
         query(
             &mut db,
             "SELECT f.id, a.city, a.state FROM flights f
-             JOIN airports a ON f.origin = a.code WHERE f.carrier = 'HA'"
+             JOIN airports a ON f.origin = a.code WHERE f.carrier = 'HA'
+             ORDER BY f.id"
         ),
         ["229824 Las Vegas NV", "232560 Kahului HI", "235296 Honolulu HI"]
     );
@@ -272,9 +273,10 @@ fn any_condition() {
     // Pairs of flights by the same aircraft. The condition is more than one
     // equality, so this runs as a nested loop over 40,000 pairs.
     let pairs = "SELECT f.id, g.id, f.tail FROM flights f JOIN flights g";
+    let by_id = "ORDER BY f.id";
     assert_eq!(
         one(&format!(
-            "{pairs} ON f.tail = g.tail AND f.id < g.id WHERE f.id < 100000"
+            "{pairs} ON f.tail = g.tail AND f.id < g.id WHERE f.id < 100000 {by_id}"
         )),
         "32832 84816 N305NX, 35568 43776 N970UY"
     );
@@ -282,7 +284,7 @@ fn any_condition() {
     // a single equality, and a hash join finds the candidates.
     assert_eq!(
         one(&format!(
-            "{pairs} ON f.tail = g.tail WHERE f.id < g.id AND f.id < 100000"
+            "{pairs} ON f.tail = g.tail WHERE f.id < g.id AND f.id < 100000 {by_id}"
         )),
         "32832 84816 N305NX, 35568 43776 N970UY"
     );
@@ -476,9 +478,12 @@ fn joins_against_a_model() {
     // Each join twice: as a single equality, which is hashed, and with a second
     // condition that is always true, which makes it a nested loop.
     for on in ["a.k = b.k", "a.k = b.k AND a.id > 0"] {
-        let sql = format!("SELECT a.id, b.id FROM a JOIN b ON {on}");
+        let sql =
+            format!("SELECT a.id, b.id FROM a JOIN b ON {on} ORDER BY a.id, b.id");
         assert_eq!(query(&mut db, &sql), inner);
-        let sql = format!("SELECT a.id, b.id FROM a LEFT JOIN b ON {on}");
+        let sql = format!(
+            "SELECT a.id, b.id FROM a LEFT JOIN b ON {on} ORDER BY a.id, b.id"
+        );
         assert_eq!(query(&mut db, &sql), left);
     }
     // @end

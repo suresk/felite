@@ -131,6 +131,10 @@ impl Parser {
             Token::Keyword(Keyword::Begin) => self.word(Statement::Begin),
             Token::Keyword(Keyword::Commit) => self.word(Statement::Commit),
             Token::Keyword(Keyword::Rollback) => self.word(Statement::Rollback),
+            Token::Keyword(Keyword::Explain) => {
+                self.advance();
+                Statement::Explain(Box::new(self.select()?))
+            }
             // @show
             _ => return self.expected("a statement"),
         };

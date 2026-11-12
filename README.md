@@ -42,6 +42,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 15:
 | 21 | Aggregates | `src/aggregate.rs` |
 | 22 | Joins | `src/join.rs` |
 | 23 | Secondary indexes | `src/keys.rs`, `src/index.rs` |
+| 24 | A query planner | `src/plan.rs` |
 
 Paths are inside `felite/`. Still to come: the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code

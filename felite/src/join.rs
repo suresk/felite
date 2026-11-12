@@ -191,7 +191,7 @@ impl Operator for HashJoin {
 
 // @listing table-scope
 /// The columns of a table, under the name the query knows it by.
-fn table_scope(table: &Table, alias: &Option<String>) -> Scope {
+pub(crate) fn table_scope(table: &Table, alias: &Option<String>) -> Scope {
     let known_as = alias.as_ref().unwrap_or(&table.name);
     let column = |c: &ColumnDef| ScopeColumn {
         table: known_as.clone(),
@@ -206,7 +206,11 @@ fn table_scope(table: &Table, alias: &Option<String>) -> Scope {
 /// If a join's condition is `a = b` with one side worked out from the outer
 /// row alone, the other from the inner row alone, and both of one type, returns
 /// the two sides bound that way: the outer one first.
-fn equi_keys(on: &Expr, outer: &Scope, inner: &Scope) -> Option<(Bound, Bound)> {
+pub(crate) fn equi_keys(
+    on: &Expr,
+    outer: &Scope,
+    inner: &Scope,
+) -> Option<(Bound, Bound)> {
     let ExprKind::Binary { op: BinaryOp::Equal, left, right } = &on.kind else {
         return None;
     };

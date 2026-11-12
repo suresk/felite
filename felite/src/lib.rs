@@ -18,6 +18,7 @@ mod modify;
 mod overflow;
 mod page;
 mod pager;
+mod plan;
 mod query;
 mod record;
 mod shell;
@@ -48,6 +49,7 @@ pub use keys::{after, encode_key};
 pub use overflow::{OVERFLOW, SPILLED, load, release, store};
 pub use page::{PAGE_SIZE, Page, PageNo};
 pub use pager::{CHECKPOINT_FRAMES, DEFAULT_FRAMES, FREE, MAGIC, Pager, PoolStats};
+pub use plan::{Plan, RowLookup, conjuncts};
 pub use query::ResultSet;
 pub use record::{Value, decode, encode};
 pub use shell::{format_rows, respond};
@@ -103,3 +105,4 @@ pub use challenges::ch22::{merge_join, partitioned_join};
 pub use challenges::ch23::{
     IndexLoop, decode_key, drop_index, encode_key_desc, index_only,
 };
+pub use challenges::ch24::{distinct_counts, join_orders, selectivity};

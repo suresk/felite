@@ -27,6 +27,8 @@ pub struct Database {
     pub(crate) temp: TempSpace,
     /// How many bytes a sort may hold in memory.
     pub(crate) sort_budget: usize,
+    /// Whether a SELECT is planned before it is run.
+    pub(crate) planner: bool,
     // @show
 }
 
@@ -62,6 +64,7 @@ impl Database {
             transaction: Transaction::Closed,
             temp: TempSpace::Memory,
             sort_budget: SORT_BUDGET,
+            planner: true,
             // @show
         })
     }
@@ -178,6 +181,7 @@ impl Database {
             Statement::Delete(delete) => self.delete(&delete),
             Statement::Update(update) => self.update(&update),
             Statement::CreateIndex(create) => self.create_index(create),
+            Statement::Explain(select) => self.explain(&select),
             Statement::Begin | Statement::Commit | Statement::Rollback => {
                 sql_error("a database with no log has no transactions".to_string())
             }

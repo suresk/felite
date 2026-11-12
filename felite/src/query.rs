@@ -21,7 +21,7 @@ pub struct ResultSet {
 // @listing select-list
 /// Works out what a SELECT list asks for: an expression and a name for each
 /// column of the result.
-fn select_list(
+pub(crate) fn select_list(
     items: &[SelectItem],
     scope: &Scope,
 ) -> Result<(Vec<Bound>, Vec<String>)> {
@@ -73,7 +73,7 @@ pub(crate) fn key_expr<'a>(select: &'a Select, key: &'a OrderKey) -> &'a Expr {
 }
 
 /// Checks an ORDER BY against the columns in scope.
-fn order_keys(select: &Select, scope: &Scope) -> Result<Vec<SortKey>> {
+pub(crate) fn order_keys(select: &Select, scope: &Scope) -> Result<Vec<SortKey>> {
     let mut keys = Vec::new();
     for key in &select.order_by {
         let expr = bind(key_expr(select, key), scope)?;
@@ -87,6 +87,9 @@ impl Database {
     // @listing select
     pub(crate) fn select(&mut self, select: &Select) -> Result<Output> {
         // @hide
+        if self.planner {
+            return self.select_planned(select);
+        }
         if is_grouped(select) {
             return self.select_grouped(select);
         }

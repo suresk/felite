@@ -19,6 +19,8 @@ pub enum Statement {
     Commit,
     Rollback,
     CreateIndex(CreateIndex),
+    /// `EXPLAIN` and the SELECT it is asked about.
+    Explain(Box<Select>),
     // @show
 }
 // @end
@@ -442,6 +444,9 @@ impl fmt::Display for Statement {
                 )?;
                 list(f, &create.columns)?;
                 write!(f, ")")
+            }
+            Statement::Explain(select) => {
+                write!(f, "EXPLAIN {}", Statement::Select((**select).clone()))
             }
             Statement::Begin => write!(f, "BEGIN"),
             Statement::Commit => write!(f, "COMMIT"),

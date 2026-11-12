@@ -208,7 +208,7 @@ fn same(a: &Expr, b: &Expr) -> bool {
 
 // @listing has-aggregate
 /// Whether an expression has an aggregate anywhere in it.
-fn has_aggregate(expr: &Expr) -> bool {
+pub(crate) fn has_aggregate(expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::Call { .. } => true,
         ExprKind::Literal(_) | ExprKind::Column { .. } => false,
@@ -330,17 +330,17 @@ fn column_name(expr: &Expr, alias: &Option<String>) -> String {
 // @listing rewritten
 /// The parts of a grouped query that come after the grouping, rewritten over
 /// its output, and the aggregates they were found to use.
-struct Rewritten {
+pub(crate) struct Rewritten {
     /// The names of the result's columns.
-    columns: Vec<String>,
-    items: Vec<Expr>,
-    having: Option<Expr>,
+    pub(crate) columns: Vec<String>,
+    pub(crate) items: Vec<Expr>,
+    pub(crate) having: Option<Expr>,
     /// Each key of the ORDER BY, and whether it is descending.
-    order: Vec<(Expr, bool)>,
-    calls: Vec<Expr>,
+    pub(crate) order: Vec<(Expr, bool)>,
+    pub(crate) calls: Vec<Expr>,
 }
 
-fn rewrite_query(select: &Select) -> Result<Rewritten> {
+pub(crate) fn rewrite_query(select: &Select) -> Result<Rewritten> {
     let mut grouping = Grouping { groups: &select.group_by, calls: Vec::new() };
     let (mut items, mut columns) = (Vec::new(), Vec::new());
     for item in &select.items {
@@ -365,7 +365,7 @@ fn rewrite_query(select: &Select) -> Result<Rewritten> {
 // @listing output-scope
 /// Binds the GROUP BY expressions and the aggregates against the table. Returns
 /// them, with a scope that describes the rows the aggregation will hand on.
-fn bind_grouping(
+pub(crate) fn bind_grouping(
     groups: &[Expr],
     calls: &[Expr],
     scope: &Scope,
