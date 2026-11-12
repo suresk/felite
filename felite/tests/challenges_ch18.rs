@@ -1,7 +1,6 @@
 //! Tests for the Chapter 18 challenges: `cargo test --test challenges_ch18`.
 use felite::{CrashDisk, Database, MemFile, Output, Pager, Storage, Value};
 use felite::{FRAME_SIZE, LOG_HEADER};
-use felite::{LogReport, log_report, recovery_reads, to_disks};
 
 fn open(file: impl Storage + 'static, log: impl Storage + 'static) -> Database {
     let pager = Pager::open_logged(Box::new(file), Box::new(log)).unwrap();
@@ -34,6 +33,16 @@ fn three_commits() -> Vec<u8> {
     log.bytes()
 }
 
+// @challenge 2
+use felite::{LogReport, log_report};
+
+// @challenge 3
+use felite::recovery_reads;
+
+// @challenge 4
+use felite::to_disks;
+
+// @challenge 1
 #[test]
 fn predict_the_recovery() {
     let frame = |i: usize| LOG_HEADER + i * FRAME_SIZE;
@@ -64,6 +73,7 @@ fn predict_the_recovery() {
     assert_eq!(recovered(&damaged), (None, None));
 }
 
+// @challenge 2
 #[test]
 fn reporting_on_a_log() {
     let frame = |i: usize| LOG_HEADER + i * FRAME_SIZE;
@@ -90,6 +100,7 @@ fn reporting_on_a_log() {
     assert_eq!(report, LogReport { salt: 2, valid: 0, committed: 0, commits: 0 });
 }
 
+// @challenge 3
 #[test]
 fn what_recovery_reads() {
     let (file, log) = (MemFile::new(), MemFile::new());
@@ -109,6 +120,7 @@ fn what_recovery_reads() {
     assert_eq!(recovery_reads(mem(&file.bytes()), mem(&log.bytes())).unwrap(), 2);
 }
 
+// @challenge 4
 #[test]
 fn crashing_twice() {
     let bonus = "UPDATE accounts SET balance = balance + 5 WHERE branch = 'north'";
@@ -165,6 +177,7 @@ fn crashing_twice() {
     }
 }
 
+// @challenge 5
 #[test]
 fn the_header_that_came_back() {
     let log = three_commits();

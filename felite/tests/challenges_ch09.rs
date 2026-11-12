@@ -1,6 +1,5 @@
 //! Tests for the Chapter 9 challenges: `cargo test --test challenges_ch09`.
-use felite::{Counting, Error, FailAfter, MemFile, Page, Pager, SharedPool};
-use felite::{clock_misses, lru_misses};
+use felite::{Error, MemFile, Page, Pager};
 
 /// A flushed file of `pages` pages. Page `n` holds the number `n` in its first
 /// four bytes.
@@ -16,6 +15,19 @@ fn numbered(pages: u32) -> MemFile {
     file
 }
 
+// @challenge 1 3
+use felite::clock_misses;
+
+// @challenge 3
+use felite::lru_misses;
+
+// @challenge 4
+use felite::{Counting, FailAfter};
+
+// @challenge 5
+use felite::SharedPool;
+
+// @challenge 1 3
 #[test]
 fn predict_reads_and_evictions() {
     let mut pager = Pager::with_capacity(Box::new(numbered(10)), 4).unwrap();
@@ -32,6 +44,7 @@ fn predict_reads_and_evictions() {
     assert_eq!(clock_misses(3, &[1, 2, 3, 1, 4, 5, 1, 2, 6, 1], false), 7);
 }
 
+// @challenge 2
 #[test]
 fn one_frame_is_enough() {
     let file = MemFile::new();
@@ -48,6 +61,7 @@ fn one_frame_is_enough() {
     assert_eq!((stats.reads, stats.writes), (12_130, 2104));
 }
 
+// @challenge 3
 #[test]
 fn clock_and_lru_on_the_same_traces() {
     // A loop over five pages in four frames is the worst case for both.
@@ -82,6 +96,7 @@ fn clock_and_lru_on_the_same_traces() {
     assert_eq!(all, (503, 503, 650));
 }
 
+// @challenge 4
 #[test]
 fn a_failed_eviction_loses_nothing() {
     // Two writes allowed, then the disk is full.
@@ -113,6 +128,7 @@ fn a_failed_eviction_loses_nothing() {
     }
 }
 
+// @challenge 5
 #[test]
 fn a_pool_with_pins() {
     let mut pool = SharedPool::new(Box::new(numbered(10)), 2);

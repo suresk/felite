@@ -1,11 +1,17 @@
 //! Tests for the Chapter 8 challenges: `cargo test --test challenges_ch08`.
 use felite::{MemFile, Pager, Tree, row_key, store};
-use felite::{account_rows, load_range, update_row};
 
 fn text(length: usize, seed: usize) -> Vec<u8> {
     (0..length).map(|i| b'a' + ((i + seed) % 26) as u8).collect()
 }
 
+// @challenge 2
+use felite::load_range;
+
+// @challenge 3 4
+use felite::{account_rows, update_row};
+
+// @challenge 1
 #[test]
 fn predict_overflow_pages() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -28,6 +34,7 @@ fn predict_overflow_pages() {
     assert_eq!(4084 / (1000 + 4), 4);
 }
 
+// @challenge 2
 #[test]
 fn part_of_a_large_row() {
     let file = MemFile::new();
@@ -56,6 +63,7 @@ fn part_of_a_large_row() {
     assert_eq!(load_range(&mut pager, &short, 400, 50).unwrap(), b"");
 }
 
+// @challenge 3 4
 #[test]
 fn replacing_a_row() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -81,6 +89,7 @@ fn replacing_a_row() {
     account_rows(&mut pager, &[table]).unwrap();
 }
 
+// @challenge 4
 #[test]
 fn overflow_pages_are_accounted_for() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();

@@ -2,7 +2,6 @@
 use felite::{
     Database, HashJoin, MemFile, Operator, Output, Row, Scan, Scope, Value,
 };
-use felite::{IndexLoop, decode_key, drop_index, encode_key_desc, index_only};
 use felite::{after, bind, encode_key, order, parse_expr};
 use std::cmp::Ordering;
 
@@ -32,6 +31,19 @@ fn text(s: &str) -> Value {
     Value::Text(s.to_string())
 }
 
+// @challenge 2
+use felite::{decode_key, index_only};
+
+// @challenge 3
+use felite::drop_index;
+
+// @challenge 4
+use felite::encode_key_desc;
+
+// @challenge 5
+use felite::IndexLoop;
+
+// @challenge 1
 #[test]
 fn predict_keys() {
     assert_eq!(hex(&encode_key(&[Value::Integer(0)])), "01 80 00 00 00 00 00 00 00");
@@ -44,6 +56,7 @@ fn predict_keys() {
     assert!(key("Z") < key("a") && key("") < key("\0"));
 }
 
+// @challenge 2
 #[test]
 fn values_back_from_a_key() {
     let rows = [
@@ -92,6 +105,7 @@ fn answering_from_the_index() {
     assert_eq!(reads, 2);
 }
 
+// @challenge 3
 #[test]
 fn dropping_an_index() {
     let (mut db, file) = fixture();
@@ -116,6 +130,7 @@ fn dropping_an_index() {
     db.check().unwrap();
 }
 
+// @challenge 4
 #[test]
 fn keys_that_sort_backwards() {
     let values = [
@@ -156,6 +171,7 @@ fn keys_that_sort_backwards() {
     assert_eq!(order(&Value::Integer(1), &Value::Integer(1)), Ordering::Equal);
 }
 
+// @challenge 5
 #[test]
 fn a_join_through_an_index() {
     let (mut db, _) = fixture();

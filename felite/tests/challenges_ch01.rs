@@ -1,6 +1,6 @@
 //! Tests for the Chapter 1 challenges: `cargo test --test challenges_ch01`.
-use felite::{Counting, Error, FailAfter, MemFile, Page, Pager, ReadOnly, Storage};
-use felite::{PAGE_SIZE, open_checked};
+use felite::PAGE_SIZE;
+use felite::{Error, MemFile, Page, Pager, Storage};
 
 /// A flushed database with `pages` pages, the header included.
 fn database(pages: u32) -> MemFile {
@@ -13,6 +13,19 @@ fn database(pages: u32) -> MemFile {
     file
 }
 
+// @challenge 2 6
+use felite::Counting;
+
+// @challenge 3
+use felite::open_checked;
+
+// @challenge 4 5
+use felite::ReadOnly;
+
+// @challenge 6
+use felite::FailAfter;
+
+// @challenge 1
 #[test]
 fn predict_sizes_and_offsets() {
     let file = MemFile::new();
@@ -30,6 +43,7 @@ fn predict_sizes_and_offsets() {
     assert_eq!((1u64 << 32) * PAGE_SIZE as u64, 17_592_186_044_416);
 }
 
+// @challenge 2
 #[test]
 fn counting_reads_writes_and_syncs() {
     let (storage, counts) = Counting::new(database(3));
@@ -60,6 +74,7 @@ fn allocating_reads_nothing() {
     assert_eq!((counts.reads.get(), counts.writes.get()), (0, 11));
 }
 
+// @challenge 3
 #[test]
 fn open_checked_compares_the_length_with_the_header() {
     let file = database(3);
@@ -86,6 +101,7 @@ fn open_checked_notices_a_truncated_file() {
     assert!(matches!(open_checked(Box::new(cut)), Err(Error::Corrupt(_))));
 }
 
+// @challenge 4
 #[test]
 fn read_only_allows_reads_and_refuses_writes() {
     let file = database(2);
@@ -100,6 +116,7 @@ fn read_only_allows_reads_and_refuses_writes() {
     assert_eq!(file.bytes(), before);
 }
 
+// @challenge 5
 #[test]
 fn close_flushes() {
     let file = MemFile::new();
@@ -113,6 +130,7 @@ fn close_flushes() {
     assert!(pager.close().is_err());
 }
 
+// @challenge 6
 #[test]
 fn a_failed_flush_can_be_retried() {
     let file = MemFile::new();

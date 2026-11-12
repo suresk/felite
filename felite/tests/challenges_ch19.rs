@@ -2,7 +2,6 @@
 use felite::{
     CrashDisk, Database, Error, MemFile, Output, Pager, Transaction, Value,
 };
-use felite::{atomically, dry_run, execute_script, insert_in_batches};
 
 fn logged() -> Database {
     let pager =
@@ -21,6 +20,19 @@ fn numbers(db: &mut Database, sql: &str) -> Vec<i64> {
     result.rows.iter().map(number).collect()
 }
 
+// @challenge 2
+use felite::execute_script;
+
+// @challenge 3
+use felite::atomically;
+
+// @challenge 4
+use felite::dry_run;
+
+// @challenge 5
+use felite::insert_in_batches;
+
+// @challenge 1
 #[test]
 fn predict_the_table() {
     let mut db = logged();
@@ -45,6 +57,7 @@ fn predict_the_table() {
     assert_eq!(numbers(&mut db, "SELECT n FROM t"), [10, 30, 60]);
 }
 
+// @challenge 2
 #[test]
 fn running_a_script() {
     let mut db = logged();
@@ -70,6 +83,7 @@ fn running_a_script() {
     assert!(execute_script(&mut db, "  ;; ").unwrap().is_empty());
 }
 
+// @challenge 3
 #[test]
 fn a_transaction_around_a_closure() {
     let mut db = logged();
@@ -101,6 +115,7 @@ fn a_transaction_around_a_closure() {
     assert_eq!(numbers(&mut db, "SELECT id FROM t"), [1, 2]);
 }
 
+// @challenge 4
 #[test]
 fn a_dry_run() {
     let mut db = logged();
@@ -123,6 +138,7 @@ fn a_dry_run() {
     assert_eq!(db.transaction(), Transaction::Open);
 }
 
+// @challenge 5
 #[test]
 fn inserting_in_batches() {
     let mut syncs = Vec::new();

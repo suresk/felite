@@ -59,7 +59,8 @@ $ cargo test                       # every example and challenge so far
 $ cargo run --example first_db     # makes first.db, a three-page database (Chapter 1)
 $ cargo xtask dump first.db 2      # a page of it as a hex dump
 $ cargo xtask cells some.db 3      # the cells of a slotted page (Chapter 3)
-$ cargo xtask check 4              # one chapter's tests
+$ cargo xtask check 4              # Chapter 4's examples, and each of its challenges
+$ cargo xtask check 4.2            # one challenge, with the full output
 $ cargo run --release -p xtask -- data   # the full flight data set, into data/ (Chapter 25)
 $ cargo xtask slt                  # sqllogictest scripts against felite (Chapter 25)
 $ cargo run --bin felite -- my.db   # a prompt: type SQL, end each statement with ;
@@ -74,6 +75,41 @@ holds the tools above. Each chapter has two test files in `felite/tests/`:
   assertion there.
 - `challenges_chNN.rs` checks the end-of-chapter challenges. The solutions are in
   `felite/src/challenges/chNN.rs`, so don't open that directory until you have tried them.
+
+## Checking your own code
+
+If you are writing felite yourself as you read, the same command that checks a chapter here
+runs its tests against your crate. Clone this repository next to yours and give it the
+directory that holds your `Cargo.toml`:
+
+```text
+$ cargo xtask check 7 --crate ../my-felite      # Chapter 7: its examples and every challenge
+$ cargo xtask check 7.2 --crate ../my-felite    # Challenge 7.2 alone, with the full output
+```
+
+```text
+Chapter 7
+  Examples          passed (11 tests)
+  Challenge 7.1     FAILED (1 of 1 test)
+      ✗ predict_the_free_list
+        assertion `left == right` failed   left: [5, 3, 0]  right: [1, 5, 3]
+  Challenge 7.2     not started (no `delete_range`)
+  Challenge 7.3     passed (1 test)
+```
+
+Each challenge is compiled on its own, so the ones you haven't written don't get in the way
+of the ones you have. Nothing is written into your crate: the tests are copied to
+`target/check` here and built against yours, along with the data files in `felite/fixtures`.
+Your package can have any name. Set the `FELITE_CRATE` environment variable to leave out
+`--crate`.
+
+Two things to know. The tests reach everything by its name at the root of the crate, such as
+`felite::delete_range`, so export each challenge's solution from your `lib.rs`. And they
+assert exact numbers and exact error messages, since those are what the book prints. If you
+word an error differently, that test will say so, and you can decide whether you mind.
+
+A few tests check two challenges at once, because one challenge's answer is used to check
+another's. Those run under both.
 
 The `// @listing` comments mark the regions the book prints. They are how the book's build
 finds its listings, and they have no effect on the code.

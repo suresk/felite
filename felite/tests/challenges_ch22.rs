@@ -1,6 +1,5 @@
 //! Tests for the Chapter 22 challenges: `cargo test --test challenges_ch22`.
 use felite::{Database, MemFile, Output, Row};
-use felite::{merge_join, partitioned_join};
 
 fn fixture() -> Database {
     let mut db = Database::open(Box::new(MemFile::new())).unwrap();
@@ -57,6 +56,13 @@ fn every_pair(
     joined
 }
 
+// @challenge 4
+use felite::merge_join;
+
+// @challenge 5
+use felite::partitioned_join;
+
+// @challenge 1
 #[test]
 fn predict_a_join() {
     let mut db = Database::open(Box::new(MemFile::new())).unwrap();
@@ -79,6 +85,7 @@ fn predict_a_join() {
     );
 }
 
+// @challenge 2
 #[test]
 fn every_pair_of_rows() {
     let mut db = fixture();
@@ -88,6 +95,7 @@ fn every_pair_of_rows() {
     );
 }
 
+// @challenge 3
 #[test]
 fn rows_with_no_match() {
     let mut db = fixture();
@@ -111,6 +119,7 @@ fn rows_with_no_match() {
     );
 }
 
+// @challenge 4
 #[test]
 fn joining_sorted_inputs() {
     let (left, right) = two_lists();
@@ -123,6 +132,7 @@ fn joining_sorted_inputs() {
     assert_eq!(merge_join(&ones, &ones).len(), 4);
 }
 
+// @challenge 5
 #[test]
 fn a_hash_join_in_parts() {
     let (left, right) = two_lists();

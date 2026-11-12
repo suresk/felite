@@ -14,6 +14,8 @@ jobs:
       - run: rustup show
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Every challenge's tests, each compiled on its own (see xtask/src/check.rs).
+      - run: cargo xtask check all
 
   test:
     strategy:

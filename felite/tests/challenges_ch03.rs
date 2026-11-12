@@ -1,7 +1,5 @@
 //! Tests for the Chapter 3 challenges: `cargo test --test challenges_ch03`.
-use felite::{
-    Page, check_slotted, insert_cell_reusing, replace_cell, truncate_cells,
-};
+use felite::Page;
 
 fn page_of(cells: &[&[u8]]) -> Page {
     let mut page = Page::new();
@@ -12,6 +10,19 @@ fn page_of(cells: &[&[u8]]) -> Page {
     page
 }
 
+// @challenge 2
+use felite::replace_cell;
+
+// @challenge 2 3 4 5
+use felite::check_slotted;
+
+// @challenge 4
+use felite::truncate_cells;
+
+// @challenge 5
+use felite::insert_cell_reusing;
+
+// @challenge 1
 #[test]
 fn predict_free_space() {
     let mut page = page_of(&[&[1; 100], &[2; 200], &[3; 300]]);
@@ -28,6 +39,7 @@ fn predict_free_space() {
     assert_eq!(547_271usize.div_ceil(240), 2281);
 }
 
+// @challenge 2
 #[test]
 fn replace_in_place_or_move() {
     let mut page = page_of(&[b"Atlanta", b"Boston", b"Chicago"]);
@@ -57,6 +69,7 @@ fn replace_in_place_or_move() {
     check_slotted(&full).unwrap();
 }
 
+// @challenge 3
 #[test]
 fn check_finds_what_is_wrong() {
     let mut good = page_of(&[b"Atlanta", b"Boston", b"Chicago"]);
@@ -80,6 +93,7 @@ fn check_finds_what_is_wrong() {
     assert_eq!(message(&page), "corrupt database: a page claims 3000 cells");
 }
 
+// @challenge 4
 #[test]
 fn truncate_drops_the_tail() {
     let cells: Vec<Vec<u8>> = (0..100).map(|i| vec![i as u8; 30]).collect();
@@ -99,6 +113,7 @@ fn truncate_drops_the_tail() {
     assert_eq!(page.bytes(), empty.bytes());
 }
 
+// @challenge 5
 #[test]
 fn a_hole_of_the_right_size_is_reused() {
     let mut page = page_of(&[&[1; 1000], &[2; 1000], &[3; 1000], &[4; 1000]]);

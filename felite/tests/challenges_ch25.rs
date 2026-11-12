@@ -1,6 +1,5 @@
 //! Tests for the Chapter 25 challenges: `cargo test --test challenges_ch25`.
 use felite::{Database, MemFile, Output, Row, Value, run_slt};
-use felite::{dump_sql, sqlite_first_table};
 
 fn fixture() -> Database {
     let mut db = Database::open(Box::new(MemFile::new())).unwrap();
@@ -19,6 +18,13 @@ fn query(db: &mut Database, sql: &str) -> Vec<String> {
     result.rows.iter().map(line).collect()
 }
 
+// @challenge 2
+use felite::dump_sql;
+
+// @challenge 4
+use felite::sqlite_first_table;
+
+// @challenge 1
 #[test]
 fn reading_the_refusals() {
     let mut db = Database::open(Box::new(MemFile::new())).unwrap();
@@ -34,6 +40,7 @@ fn reading_the_refusals() {
     assert_eq!(report.refusals.values().sum::<usize>(), 862);
 }
 
+// @challenge 2
 #[test]
 fn writing_a_database_as_sql() {
     let mut db = fixture();
@@ -55,6 +62,7 @@ fn writing_a_database_as_sql() {
     copy.check().unwrap();
 }
 
+// @challenge 4
 #[test]
 fn reading_a_sqlite_file() {
     let rows =

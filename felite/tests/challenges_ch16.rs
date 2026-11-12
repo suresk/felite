@@ -1,8 +1,20 @@
 //! Tests for the Chapter 16 challenges: `cargo test --test challenges_ch16`.
 use felite::{CrashDisk, Database, Fate, Output, PAGE_SIZE, SECTOR, Storage, Value};
-use felite::{SyncEach, byte_sum, checksum, free_list_damage, pages_written};
 use std::collections::BTreeSet;
 
+// @challenge 2
+use felite::pages_written;
+
+// @challenge 3
+use felite::{byte_sum, checksum};
+
+// @challenge 4
+use felite::free_list_damage;
+
+// @challenge 5
+use felite::SyncEach;
+
+// @challenge 1
 #[test]
 fn predict_what_survives() {
     let mut disk = CrashDisk::new();
@@ -26,6 +38,7 @@ fn predict_what_survives() {
     assert_eq!(files, ["A", "AC", "B", "BC", "D", "DC"]);
 }
 
+// @challenge 2
 #[test]
 fn writes_of_a_statement() {
     let disk = CrashDisk::new();
@@ -43,6 +56,7 @@ fn writes_of_a_statement() {
     assert_eq!(written("DROP TABLE notes"), 4);
 }
 
+// @challenge 3
 #[test]
 fn detecting_a_torn_page() {
     let old: Vec<u8> = (0..PAGE_SIZE).map(|i| (i * 7 % 251) as u8).collect();
@@ -67,6 +81,7 @@ fn detecting_a_torn_page() {
     assert_ne!(checksum((0, 0), &swapped), expected);
 }
 
+// @challenge 4
 #[test]
 fn damaging_the_free_list() {
     let statements = ["CREATE TABLE t (a INTEGER)", "DROP TABLE t"];
@@ -76,6 +91,7 @@ fn damaging_the_free_list() {
     assert_eq!(free_list_damage(&statements[..1]).unwrap(), None);
 }
 
+// @challenge 5
 #[test]
 fn syncing_every_write() {
     let bonus = "UPDATE accounts SET balance = balance + 5 WHERE branch = 'north'";

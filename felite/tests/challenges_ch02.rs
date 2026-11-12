@@ -1,13 +1,32 @@
 //! Tests for the Chapter 2 challenges: `cargo test --test challenges_ch02`.
 use felite::{Value, decode, encode, put_varint, varint};
-use felite::{
-    column, decode_compact, encode_compact, key_f64, key_i64, varint_strict,
-};
 
 fn text(s: &str) -> Value {
     Value::Text(s.to_string())
 }
 
+/// A small random number generator (xorshift), so that the test is the same every
+/// run.
+fn next(state: &mut u64) -> u64 {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    *state
+}
+
+// @challenge 2
+use felite::column;
+
+// @challenge 3
+use felite::{decode_compact, encode_compact};
+
+// @challenge 4
+use felite::varint_strict;
+
+// @challenge 6
+use felite::{key_f64, key_i64};
+
+// @challenge 1
 #[test]
 fn predict_record_sizes() {
     assert_eq!(encode(&[Value::Integer(63)]).len(), 3);
@@ -25,6 +44,7 @@ fn predict_record_sizes() {
     }
 }
 
+// @challenge 2
 #[test]
 fn one_column_without_the_rest() {
     let row = [
@@ -49,6 +69,7 @@ fn one_column_without_the_rest() {
     assert!(column(&bytes[..8], 3).is_err()); // cut short
 }
 
+// @challenge 3
 #[test]
 fn zero_and_one_for_free() {
     let flags: Vec<Value> = (0..20).map(|i| Value::Integer(i % 2)).collect();
@@ -68,6 +89,7 @@ fn zero_and_one_for_free() {
     assert!(decode_compact(&bytes[..9]).is_err());
 }
 
+// @challenge 4
 #[test]
 fn padded_varints_are_refused() {
     assert_eq!(varint(&[0x80, 0x01]).unwrap(), (1, 2)); // 1, written in two bytes
@@ -82,15 +104,7 @@ fn padded_varints_are_refused() {
     }
 }
 
-/// A small random number generator (xorshift), so that the test is the same every
-/// run.
-fn next(state: &mut u64) -> u64 {
-    *state ^= *state << 13;
-    *state ^= *state >> 7;
-    *state ^= *state << 17;
-    *state
-}
-
+// @challenge 5
 #[test]
 fn decode_never_panics() {
     let mut state = 0x2545_f491_4f6c_dd1d;
@@ -123,6 +137,7 @@ fn decode_never_panics() {
     assert_eq!(survived, 2568); // of 17 × 256 = 4,352
 }
 
+// @challenge 6
 #[test]
 fn keys_sort_as_bytes() {
     let mut ints = [0, -1, 1, 255, 256, -256, i64::MIN, i64::MAX, 1 << 40];

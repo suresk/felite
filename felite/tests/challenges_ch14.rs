@@ -1,5 +1,4 @@
 //! Tests for the Chapter 14 challenges: `cargo test --test challenges_ch14`.
-use felite::{Counted, Distinct, insert_select, insert_values};
 use felite::{
     Database, Filter, MemFile, Operator, Output, Project, Row, Scan, Scope, Value,
 };
@@ -36,6 +35,19 @@ fn query(db: &mut Database, sql: &str) -> Vec<String> {
     result.rows.iter().map(line).collect()
 }
 
+// @challenge 2
+use felite::Counted;
+
+// @challenge 3
+use felite::Distinct;
+
+// @challenge 4
+use felite::insert_values;
+
+// @challenge 5
+use felite::insert_select;
+
+// @challenge 1
 #[test]
 fn predict_the_output() {
     let mut db = flights();
@@ -71,6 +83,7 @@ fn predict_the_output() {
     );
 }
 
+// @challenge 2
 #[test]
 fn calls_per_row() {
     let mut db = flights();
@@ -99,6 +112,7 @@ fn calls_per_row() {
     assert_eq!((scans.get(), filters.get(), projects.get()), (6, 3, 3));
 }
 
+// @challenge 3
 #[test]
 fn distinct_rows() {
     let mut db = flights();
@@ -116,6 +130,7 @@ fn distinct_rows() {
     assert_eq!(carriers, ["AA", "UA", "DL", "WN"]);
 }
 
+// @challenge 4
 #[test]
 fn values_without_sql() {
     let mut db = flights();
@@ -151,6 +166,7 @@ fn values_without_sql() {
     assert_eq!(query(&mut db, "SELECT id FROM flights").len(), 6);
 }
 
+// @challenge 5
 #[test]
 fn filling_a_table_from_a_query() {
     let mut db = flights();

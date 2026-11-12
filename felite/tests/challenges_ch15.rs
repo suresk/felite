@@ -1,6 +1,5 @@
 //! Tests for the Chapter 15 challenges: `cargo test --test challenges_ch15`.
-use felite::{Database, MemFile, Output, Row, Value, account_database};
-use felite::{delete_returning, truncate_table, would_affect};
+use felite::{Database, MemFile, Output, Row, Value};
 
 fn flights() -> (Database, MemFile) {
     let file = MemFile::new();
@@ -38,6 +37,16 @@ fn changed(db: &mut Database, sql: &str) -> usize {
     count
 }
 
+// @challenge 1 4
+use felite::would_affect;
+
+// @challenge 2
+use felite::{account_database, truncate_table};
+
+// @challenge 3
+use felite::delete_returning;
+
+// @challenge 1 4
 #[test]
 fn predict_rows_affected() {
     let (mut db, _) = flights();
@@ -77,6 +86,7 @@ fn predict_rows_affected() {
     assert!(would_affect(&mut db, "SELECT * FROM flights").is_err());
 }
 
+// @challenge 2
 #[test]
 fn emptying_a_table_at_once() {
     let (mut db, file) = flights();
@@ -98,6 +108,7 @@ fn emptying_a_table_at_once() {
     account_database(&mut db).unwrap();
 }
 
+// @challenge 3
 #[test]
 fn getting_back_what_was_deleted() {
     let (mut db, _) = flights();

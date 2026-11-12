@@ -1,7 +1,6 @@
 //! Tests for the Chapter 20 challenges: `cargo test --test challenges_ch20`.
 use felite::{Database, Limit, MemFile, Operator, Output, Row, Scan, Scope, Value};
 use felite::{Sort, SortKey, TempSpace, bind, parse_expr};
-use felite::{TopN, merge_passes, order_with, query_by_position, replacement_runs};
 use std::cmp::Ordering;
 
 fn fixture() -> Database {
@@ -49,6 +48,22 @@ fn drain(mut operator: impl Operator, db: &mut Database) -> Vec<Row> {
     rows
 }
 
+// @challenge 2
+use felite::TopN;
+
+// @challenge 3
+use felite::order_with;
+
+// @challenge 4
+use felite::merge_passes;
+
+// @challenge 5
+use felite::replacement_runs;
+
+// @challenge 6
+use felite::query_by_position;
+
+// @challenge 1
 #[test]
 fn predict_runs() {
     let mut db = fixture();
@@ -60,6 +75,7 @@ fn predict_runs() {
     }
 }
 
+// @challenge 2
 #[test]
 fn the_first_few_without_the_sort() {
     let mut db = fixture();
@@ -87,6 +103,7 @@ fn the_first_few_without_the_sort() {
     }
 }
 
+// @challenge 3
 #[test]
 fn nulls_last() {
     let (null, one, two) = (Value::Null, Value::Integer(1), Value::Integer(2));
@@ -104,6 +121,7 @@ fn nulls_last() {
     assert_eq!(values, [two, one, null.clone(), null]);
 }
 
+// @challenge 4
 #[test]
 fn merging_in_passes() {
     let mut state = 20;
@@ -126,6 +144,7 @@ fn merging_in_passes() {
     assert_eq!(merge_passes(Vec::new(), 5), (Vec::new(), 0));
 }
 
+// @challenge 5
 #[test]
 fn longer_runs() {
     let sorted: Vec<i64> = (0..1000).collect();
@@ -150,6 +169,7 @@ fn longer_runs() {
     assert_eq!(replacement_runs(&[], 10), Vec::<Vec<i64>>::new());
 }
 
+// @challenge 6
 #[test]
 fn sorting_by_position() {
     let mut db = fixture();

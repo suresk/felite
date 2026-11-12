@@ -1,6 +1,5 @@
 //! Tests for the Chapter 7 challenges: `cargo test --test challenges_ch07`.
 use felite::{MemFile, Page, Pager, Tree, row_key};
-use felite::{account, delete_range, free_pages, rebuild, tree_pages};
 
 fn new_tree() -> (Pager, Tree) {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -12,6 +11,22 @@ fn add(tree: &Tree, pager: &mut Pager, id: i64, size: usize) {
     tree.insert(pager, &row_key(id), &vec![id as u8; size]).unwrap();
 }
 
+// @challenge 1 3 5
+use felite::free_pages;
+
+// @challenge 2
+use felite::delete_range;
+
+// @challenge 2 3 4 5
+use felite::account;
+
+// @challenge 3 5
+use felite::tree_pages;
+
+// @challenge 4 5
+use felite::rebuild;
+
+// @challenge 1
 #[test]
 fn predict_the_free_list() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -48,6 +63,7 @@ fn predict_the_free_list() {
     assert_eq!(deleted, 77);
 }
 
+// @challenge 2
 #[test]
 fn deleting_a_range() {
     let (mut pager, tree) = new_tree();
@@ -73,6 +89,7 @@ fn deleting_a_range() {
     account(&mut pager, &[tree]).unwrap();
 }
 
+// @challenge 3 5
 #[test]
 fn where_every_page_is() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -107,6 +124,7 @@ fn where_every_page_is() {
     assert!(free_pages(&mut pager).is_err());
 }
 
+// @challenge 4 5
 #[test]
 fn rebuilding_a_tree() {
     let (mut pager, tree) = new_tree();

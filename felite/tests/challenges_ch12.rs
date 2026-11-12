@@ -1,6 +1,5 @@
 //! Tests for the Chapter 12 challenges: `cargo test --test challenges_ch12`.
 use felite::{Database, MemFile};
-use felite::{account_database, create_if_missing, rename_table, schema_dump};
 
 fn new_database() -> (Database, MemFile) {
     let file = MemFile::new();
@@ -12,6 +11,19 @@ fn places(db: &Database) -> Vec<(&str, u32, i64)> {
     db.tables().map(|t| (t.name.as_str(), t.tree.root(), t.schema_row)).collect()
 }
 
+// @challenge 1 4 5
+use felite::account_database;
+
+// @challenge 2
+use felite::schema_dump;
+
+// @challenge 3
+use felite::create_if_missing;
+
+// @challenge 4 5
+use felite::rename_table;
+
+// @challenge 1 5
 #[test]
 fn predict_the_schema_table() {
     let (mut db, _) = new_database();
@@ -30,6 +42,7 @@ fn predict_the_schema_table() {
     account_database(&mut db).unwrap();
 }
 
+// @challenge 2
 #[test]
 fn printing_the_schema() {
     let (mut db, _) = new_database();
@@ -49,6 +62,7 @@ fn printing_the_schema() {
     assert_eq!(schema_dump(&copy), schema_dump(&db));
 }
 
+// @challenge 3
 #[test]
 fn create_only_if_missing() {
     let (mut db, _) = new_database();
@@ -59,6 +73,7 @@ fn create_only_if_missing() {
     assert!(create_if_missing(&mut db, "CREATE TABLE").is_err());
 }
 
+// @challenge 4 5
 #[test]
 fn renaming_a_table() {
     let (mut db, file) = new_database();
@@ -85,6 +100,7 @@ fn renaming_a_table() {
     account_database(&mut db).unwrap();
 }
 
+// @challenge 5
 #[test]
 fn every_page_of_a_database() {
     let (mut db, _) = new_database();

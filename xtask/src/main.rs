@@ -1,26 +1,25 @@
-//! `cargo xtask check 2` runs Chapter 2's tests (the chapter's examples and its
-//! challenges) and says which ones still fail. `cargo xtask check all` runs them all.
+//! `cargo xtask check 2` runs Chapter 2's tests (the chapter's examples and each of
+//! its challenges) and says which pass. `cargo xtask check 2.3` runs one challenge,
+//! and `cargo xtask check all` every chapter. Add `--crate <dir>` to run them against
+//! your own crate. See `check.rs`.
 //! `cargo xtask dump file.db [page]` prints one page of a database file, and
 //! `cargo xtask cells file.db page` lists the cells of a slotted page.
 //! `cargo xtask data` fetches the example data set (Chapter 25), and
 //! `cargo xtask slt [script …]` runs sqllogictest scripts against felite.
 
+mod check;
 mod data;
 mod slt;
 
 use felite::{PAGE_SIZE, Page, hex_dump};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-        ["check", "all"] => run(&["test", "--package", "felite"], "all chapters"),
-        ["check", n] => match n.parse::<u32>() {
-            Ok(n) => check(n),
-            Err(_) => usage(),
-        },
+        ["check", ref rest @ ..] => check::main(rest),
         ["dump", path] => report(dump(path, 0)),
         ["dump", path, page] => match page.parse() {
             Ok(page) => report(dump(path, page)),
@@ -47,7 +46,9 @@ fn outcome(result: Result<(), Box<dyn std::error::Error>>) -> ExitCode {
 }
 
 fn usage() -> ExitCode {
-    eprintln!("usage: cargo xtask check <chapter>|all");
+    eprintln!(
+        "usage: cargo xtask check <chapter | chapter.challenge | all> [--crate <dir>]"
+    );
     eprintln!("       cargo xtask dump <file> [page]");
     eprintln!("       cargo xtask cells <file> <page>");
     eprintln!("       cargo xtask data");
@@ -89,56 +90,6 @@ fn report(result: std::io::Result<()>) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{e}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-/// The test binaries for one chapter: `book_ch07`, `challenges_ch07`, and any others
-/// whose names start that way.
-fn chapter_tests(n: u32) -> Vec<String> {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../felite/tests");
-    let mut names: Vec<String> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| e.file_name().to_str()?.strip_suffix(".rs").map(String::from))
-        .filter(|name| {
-            [format!("book_ch{n:02}"), format!("challenges_ch{n:02}")]
-                .iter()
-                .any(|p| name.starts_with(p.as_str()))
-        })
-        .collect();
-    names.sort();
-    names
-}
-
-fn check(n: u32) -> ExitCode {
-    let tests = chapter_tests(n);
-    if tests.is_empty() {
-        eprintln!("no tests for Chapter {n} in felite/tests");
-        return ExitCode::from(2);
-    }
-    let mut args = vec!["test", "--package", "felite"];
-    for t in &tests {
-        args.extend(["--test", t.as_str()]);
-    }
-    run(&args, &format!("Chapter {n}"))
-}
-
-fn run(args: &[&str], what: &str) -> ExitCode {
-    let status = Command::new(env!("CARGO")).args(args).status();
-    match status {
-        Ok(s) if s.success() => {
-            println!("{what}: every test passes");
-            ExitCode::SUCCESS
-        }
-        Ok(_) => {
-            println!("{what}: some tests fail or do not compile yet (see above)");
-            ExitCode::FAILURE
-        }
-        Err(e) => {
-            eprintln!("could not run cargo: {e}");
             ExitCode::FAILURE
         }
     }

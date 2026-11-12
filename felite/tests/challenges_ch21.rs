@@ -1,7 +1,6 @@
 //! Tests for the Chapter 21 challenges: `cargo test --test challenges_ch21`.
 use felite::{Database, MemFile, Operator, Output, Row, Scan, Scope, Value};
 use felite::{SORT_BUDGET, Sort, SortKey, TempSpace, bind, parse_expr};
-use felite::{SortedCount, count_distinct, hash_counts, median};
 
 fn fixture() -> Database {
     let mut db = Database::open(Box::new(MemFile::new())).unwrap();
@@ -39,6 +38,19 @@ fn query(db: &mut Database, sql: &str) -> Vec<String> {
     result.rows.iter().map(line).collect()
 }
 
+// @challenge 2
+use felite::count_distinct;
+
+// @challenge 3
+use felite::hash_counts;
+
+// @challenge 4
+use felite::SortedCount;
+
+// @challenge 5
+use felite::median;
+
+// @challenge 1
 #[test]
 fn predict_groups() {
     let mut db = five_flights();
@@ -65,6 +77,7 @@ fn predict_groups() {
     );
 }
 
+// @challenge 2
 #[test]
 fn counting_distinct_values() {
     let mut db = fixture();
@@ -78,6 +91,7 @@ fn counting_distinct_values() {
     assert!(count_distinct(&mut db, "flights", "nothing").is_err());
 }
 
+// @challenge 3
 #[test]
 fn grouping_with_a_hash_table() {
     let mut db = fixture();
@@ -90,6 +104,7 @@ fn grouping_with_a_hash_table() {
     }
 }
 
+// @challenge 4
 #[test]
 fn grouping_sorted_input() {
     let mut db = fixture();
@@ -116,6 +131,7 @@ fn grouping_sorted_input() {
     assert!(counts.next(db.pager()).unwrap().is_none());
 }
 
+// @challenge 5
 #[test]
 fn the_middle_value() {
     let mut db = fixture();

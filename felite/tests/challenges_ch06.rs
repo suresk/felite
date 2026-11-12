@@ -1,6 +1,5 @@
 //! Tests for the Chapter 6 challenges: `cargo test --test challenges_ch06`.
 use felite::{Cursor, MemFile, Pager, Tree, row_id, row_key};
-use felite::{ReverseCursor, StableCursor, count_range, prefix_end, prefix_scan};
 
 fn new_tree() -> (Pager, Tree) {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -24,6 +23,19 @@ fn big_table() -> (MemFile, Tree) {
     (file, tree)
 }
 
+// @challenge 2
+use felite::count_range;
+
+// @challenge 3
+use felite::StableCursor;
+
+// @challenge 4
+use felite::{prefix_end, prefix_scan};
+
+// @challenge 5
+use felite::ReverseCursor;
+
+// @challenge 1
 #[test]
 fn predict_pages_read() {
     let (file, tree) = big_table();
@@ -43,6 +55,7 @@ fn predict_pages_read() {
     assert_eq!(pages(255 * 77 - 1, 255 * 77 + 1), (2, 2 + 2));
 }
 
+// @challenge 2
 #[test]
 fn counting_a_range() {
     let (file, tree) = big_table();
@@ -60,6 +73,7 @@ fn counting_a_range() {
     assert_eq!(count(76, 78), 2);
 }
 
+// @challenge 3
 #[test]
 fn a_cursor_that_survives_changes() {
     let (mut pager, tree) = new_tree();
@@ -100,6 +114,7 @@ fn a_cursor_that_survives_changes() {
     assert_eq!(id(stable.next(&tree, &mut pager).unwrap()), 25);
 }
 
+// @challenge 4
 #[test]
 fn scanning_by_prefix() {
     assert_eq!(prefix_end(b"SL").unwrap(), b"SM");
@@ -122,6 +137,7 @@ fn scanning_by_prefix() {
     assert_eq!(keys(b"").len(), 10);
 }
 
+// @challenge 5
 #[test]
 fn reading_backward() {
     let (mut pager, tree) = new_tree();

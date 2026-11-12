@@ -1,6 +1,5 @@
 //! Tests for the Chapter 10 challenges: `cargo test --test challenges_ch10`.
 use felite::{Error, Keyword, Symbol, Token, tokenize};
-use felite::{hex_literal, scan_quoted, strip_block_comments, to_sql};
 
 fn tokens(source: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> =
@@ -9,6 +8,19 @@ fn tokens(source: &str) -> Vec<Token> {
     tokens
 }
 
+// @challenge 2
+use felite::scan_quoted;
+
+// @challenge 3
+use felite::strip_block_comments;
+
+// @challenge 4
+use felite::hex_literal;
+
+// @challenge 5
+use felite::to_sql;
+
+// @challenge 1
 #[test]
 fn predict_the_tokens() {
     use Symbol::*;
@@ -43,6 +55,7 @@ fn predict_the_tokens() {
     assert_eq!(tokens("x--1"), [ident("x")]);
 }
 
+// @challenge 2
 #[test]
 fn names_in_double_quotes() {
     assert_eq!(
@@ -60,6 +73,7 @@ fn names_in_double_quotes() {
     assert_eq!(scan_quoted(r#""ends in a pair"""#), None);
 }
 
+// @challenge 3
 #[test]
 fn block_comments() {
     let stripped = strip_block_comments("SELECT /* all of */ name FROM t").unwrap();
@@ -84,6 +98,7 @@ fn block_comments() {
     );
 }
 
+// @challenge 4
 #[test]
 fn hexadecimal() {
     assert_eq!(hex_literal("0x1F"), Some(31));
@@ -97,6 +112,7 @@ fn hexadecimal() {
     assert_eq!(hex_literal("1F"), None);
 }
 
+// @challenge 5
 #[test]
 fn tokens_back_to_text() {
     let lines = [

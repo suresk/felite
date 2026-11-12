@@ -1,7 +1,6 @@
 //! Tests for the Chapter 17 challenges: `cargo test --test challenges_ch17`.
 use felite::{CrashDisk, Database, MemFile, Page, Pager, Tree, row_key};
 use felite::{FRAME_SIZE, LEAF, LOG_HEADER};
-use felite::{NoSync, apply_delta, complete_commits, list_frames, page_delta};
 
 fn logged() -> (Database, MemFile) {
     let log = MemFile::new();
@@ -9,6 +8,19 @@ fn logged() -> (Database, MemFile) {
     (Database::with_pager(pager.unwrap()).unwrap(), log)
 }
 
+// @challenge 1 2
+use felite::list_frames;
+
+// @challenge 3
+use felite::{apply_delta, page_delta};
+
+// @challenge 4
+use felite::NoSync;
+
+// @challenge 5
+use felite::complete_commits;
+
+// @challenge 1
 #[test]
 fn predict_the_log() {
     let (mut db, log) = logged();
@@ -29,6 +41,7 @@ fn predict_the_log() {
     assert_eq!(log.bytes().len(), LOG_HEADER + 8 * FRAME_SIZE);
 }
 
+// @challenge 2
 #[test]
 fn reading_a_log() {
     let (mut db, log) = logged();
@@ -42,25 +55,7 @@ fn reading_a_log() {
     assert!(list_frames(&[0; 5000]).is_err());
 }
 
-#[test]
-fn commits_in_a_log_cut_short() {
-    let (mut db, log) = logged();
-    db.execute("CREATE TABLE t (a INTEGER)").unwrap(); // frames 0 to 2
-    db.execute("INSERT INTO t VALUES (1)").unwrap(); // frame 3
-    db.execute("CREATE TABLE u (a INTEGER)").unwrap(); // frames 4 to 6
-    let bytes = log.bytes();
-    let cut =
-        |frames: usize| complete_commits(&bytes[..LOG_HEADER + frames * FRAME_SIZE]);
-    assert_eq!(cut(7).unwrap(), (3, 7));
-    // Cut anywhere inside the last commit, and it was never made.
-    assert_eq!(cut(6).unwrap(), (2, 4));
-    assert_eq!(cut(5).unwrap(), (2, 4));
-    assert_eq!(cut(4).unwrap(), (2, 4));
-    assert_eq!(cut(3).unwrap(), (1, 3));
-    assert_eq!(cut(2).unwrap(), (0, 0));
-    assert_eq!(cut(0).unwrap(), (0, 0));
-}
-
+// @challenge 3
 #[test]
 fn a_page_as_its_changes() {
     // A leaf with 50 rows, before and after one more is added.
@@ -90,6 +85,7 @@ fn a_page_as_its_changes() {
     assert!(apply_delta(&mut old, &[0, 0, 0]).is_err());
 }
 
+// @challenge 4
 #[test]
 fn a_storage_that_never_syncs() {
     let disk = CrashDisk::new();
@@ -106,4 +102,24 @@ fn a_storage_that_never_syncs() {
     assert_eq!(log.pending(), 5);
     // So a power failure may leave nothing at all.
     assert_eq!(log.crash(|_| felite::Fate::Lost).bytes().len(), 0);
+}
+
+// @challenge 5
+#[test]
+fn commits_in_a_log_cut_short() {
+    let (mut db, log) = logged();
+    db.execute("CREATE TABLE t (a INTEGER)").unwrap(); // frames 0 to 2
+    db.execute("INSERT INTO t VALUES (1)").unwrap(); // frame 3
+    db.execute("CREATE TABLE u (a INTEGER)").unwrap(); // frames 4 to 6
+    let bytes = log.bytes();
+    let cut =
+        |frames: usize| complete_commits(&bytes[..LOG_HEADER + frames * FRAME_SIZE]);
+    assert_eq!(cut(7).unwrap(), (3, 7));
+    // Cut anywhere inside the last commit, and it was never made.
+    assert_eq!(cut(6).unwrap(), (2, 4));
+    assert_eq!(cut(5).unwrap(), (2, 4));
+    assert_eq!(cut(4).unwrap(), (2, 4));
+    assert_eq!(cut(3).unwrap(), (1, 3));
+    assert_eq!(cut(2).unwrap(), (0, 0));
+    assert_eq!(cut(0).unwrap(), (0, 0));
 }

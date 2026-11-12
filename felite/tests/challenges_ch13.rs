@@ -2,7 +2,6 @@
 use felite::{
     Bound, BoundKind, Scope, ScopeColumn, Type, Value, bind, eval, parse_expr,
 };
-use felite::{can_be_null, cast, fold_constants, like};
 
 fn scope() -> Scope {
     let column = |name: &str, ty| ScopeColumn {
@@ -29,6 +28,19 @@ fn value(sql: &str) -> Value {
     eval(&bound(sql), &row).unwrap()
 }
 
+// @challenge 2
+use felite::fold_constants;
+
+// @challenge 3
+use felite::like;
+
+// @challenge 4
+use felite::cast;
+
+// @challenge 5
+use felite::can_be_null;
+
+// @challenge 1
 #[test]
 fn predict_with_nulls() {
     let (yes, no, unknown) = (Value::Integer(1), Value::Integer(0), Value::Null);
@@ -46,6 +58,7 @@ fn predict_with_nulls() {
     assert_eq!(value("(delay + NULL) = (delay + NULL)"), unknown);
 }
 
+// @challenge 2
 #[test]
 fn folding_constants() {
     let folded = |sql: &str| fold_constants(bound(sql)).unwrap();
@@ -80,6 +93,7 @@ fn folding_constants() {
     assert!(fold_constants(bound("delay + 1 / 0")).is_err());
 }
 
+// @challenge 3
 #[test]
 fn like_patterns() {
     assert!(like("Salt Lake City", "Salt%"));
@@ -100,6 +114,7 @@ fn like_patterns() {
     assert!(like(&"a".repeat(30), "%a%a%a%a%a%"));
 }
 
+// @challenge 4
 #[test]
 fn casting() {
     let text = |s: &str| Value::Text(s.to_string());
@@ -120,6 +135,7 @@ fn casting() {
     assert_eq!(error, "cannot turn 'fifteen' into an INTEGER");
 }
 
+// @challenge 5
 #[test]
 fn what_can_be_null() {
     // delay is declared NOT NULL. miles and origin are not.

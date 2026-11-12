@@ -1,6 +1,5 @@
 //! Tests for the Chapter 5 challenges: `cargo test --test challenges_ch05`.
 use felite::{MemFile, Pager, Tree, interior_cell, row_key};
-use felite::{bulk_load, count, put};
 
 fn new_tree() -> (Pager, Tree) {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -12,6 +11,16 @@ fn add(tree: &Tree, pager: &mut Pager, id: i64, size: usize) {
     tree.insert(pager, &row_key(id), &vec![id as u8; size]).unwrap();
 }
 
+// @challenge 2
+use felite::put;
+
+// @challenge 3 4
+use felite::count;
+
+// @challenge 5
+use felite::bulk_load;
+
+// @challenge 1
 #[test]
 fn predict_a_small_tree() {
     // Rows of 900 bytes: a cell of 909 and its slot, so four to a leaf.
@@ -52,6 +61,7 @@ fn predict_a_small_tree() {
     tree.check(&mut pager).unwrap();
 }
 
+// @challenge 2
 #[test]
 fn put_inserts_or_replaces() {
     let (mut pager, tree) = new_tree();
@@ -75,6 +85,7 @@ fn put_inserts_or_replaces() {
     assert_eq!(tree.get(&mut pager, &row_key(30)).unwrap().unwrap(), [9; 500]);
 }
 
+// @challenge 3
 #[test]
 fn counting_splits() {
     // Every split allocates one page, and a root split allocates one more.
@@ -96,6 +107,7 @@ fn counting_splits() {
     assert_eq!(count(&tree, &mut pager).unwrap(), 100_000);
 }
 
+// @challenge 4
 #[test]
 fn count_walks_the_leaves() {
     let (mut pager, tree) = new_tree();
@@ -113,6 +125,7 @@ fn count_walks_the_leaves() {
     assert!(count(&tree, &mut pager).is_err());
 }
 
+// @challenge 5
 #[test]
 fn bulk_load_builds_full_pages() {
     let entries: Vec<(Vec<u8>, Vec<u8>)> = (0..100_000i64)

@@ -1,8 +1,8 @@
 //! Tests for the Chapter 4 challenges: `cargo test --test challenges_ch04`.
+use felite::row_key;
 use felite::{
     INTERIOR, LEAF, MemFile, Page, PageNo, Pager, Tree, interior_cell, leaf_cell,
 };
-use felite::{contains, first_key, last_key, path, row_key, separator};
 
 fn leaf(entries: &[(&[u8], &[u8])]) -> Page {
     let mut page = Page::new();
@@ -49,6 +49,19 @@ fn airports(pager: &mut Pager) -> Tree {
     Tree::open(pager.allocate(root).unwrap())
 }
 
+// @challenge 1 2
+use felite::path;
+
+// @challenge 3 5
+use felite::contains;
+
+// @challenge 4
+use felite::{first_key, last_key};
+
+// @challenge 5
+use felite::separator;
+
+// @challenge 1 2
 #[test]
 fn predict_paths_and_heights() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -69,6 +82,7 @@ fn predict_paths_and_heights() {
     assert_eq!(4084 / (4 + 30 + 4), 107);
 }
 
+// @challenge 3
 #[test]
 fn contains_copies_nothing() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -81,6 +95,7 @@ fn contains_copies_nothing() {
     }
 }
 
+// @challenge 4
 #[test]
 fn the_ends_of_a_tree() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -97,6 +112,7 @@ fn the_ends_of_a_tree() {
     assert_eq!(last_key(&one, &mut pager).unwrap().unwrap(), row_key(42));
 }
 
+// @challenge 5
 #[test]
 fn short_separators() {
     assert_eq!(separator(b"DEN", b"JFK"), b"J");
