@@ -22,6 +22,12 @@ pub fn columns_used(expr: &Expr) -> Vec<String> {
                 walk(left, found);
                 walk(right, found);
             }
+            // @hide
+            ExprKind::Call { arg, .. } => {
+                if let Some(arg) = arg {
+                    walk(arg, found);
+                }
+            } // @show
         }
     }
     let mut found = Vec::new();
@@ -37,6 +43,9 @@ pub fn depth(expr: &Expr) -> usize {
             1 + depth(operand)
         }
         ExprKind::Binary { left, right, .. } => 1 + depth(left).max(depth(right)),
+        // @hide
+        ExprKind::Call { arg, .. } => 1 + arg.as_deref().map_or(0, depth),
+        // @show
     }
 }
 // @end
@@ -48,6 +57,9 @@ fn power(expr: &Expr) -> u8 {
     use BinaryOp::*;
     match &expr.kind {
         ExprKind::Literal(_) | ExprKind::Column { .. } => 9,
+        // @hide
+        ExprKind::Call { .. } => 9,
+        // @show
         ExprKind::Unary { op: UnaryOp::Negate, .. } => 7,
         ExprKind::Unary { op: UnaryOp::Not, .. } => 3,
         ExprKind::IsNull { .. } => 4,
@@ -73,6 +85,12 @@ pub fn to_minimal_sql(expr: &Expr) -> String {
     let own = power(expr);
     match &expr.kind {
         ExprKind::Literal(_) | ExprKind::Column { .. } => expr.to_string(),
+        // @hide
+        ExprKind::Call { function, arg: Some(arg) } => {
+            format!("{}({})", function.name(), to_minimal_sql(arg))
+        }
+        ExprKind::Call { arg: None, .. } => expr.to_string(),
+        // @show
         ExprKind::Unary { op: UnaryOp::Negate, operand } => {
             let text = child(operand, own);
             // Two minus signs in a row would begin a comment.

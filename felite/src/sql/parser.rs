@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::record::Value;
 use crate::sql::ast::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind};
-use crate::sql::ast::{Delete, OrderKey, Update};
+use crate::sql::ast::{Delete, Function, OrderKey, Update};
 use crate::sql::ast::{Insert, Select, SelectItem, Statement, UnaryOp};
 use crate::sql::token::{Keyword, Span, Symbol, Token, tokenize};
 
@@ -262,6 +262,7 @@ impl Parser {
         let filter =
             if self.eat_keyword(Keyword::Where) { Some(self.expr(0)?) } else { None };
         // @hide
+        let (group_by, having) = self.group_by()?;
         let order_by = self.order_by()?;
         let limit = self.count_after(Keyword::Limit)?;
         let offset = self.count_after(Keyword::Offset)?;
@@ -274,6 +275,8 @@ impl Parser {
             order_by,
             limit,
             offset,
+            group_by,
+            having,
             // @show
         })
     }
@@ -294,6 +297,43 @@ impl Parser {
 }
 
 impl Parser {
+    // @listing parse-call
+    /// The rest of a function call, after `name(`.
+    fn call(&mut self, name: &str, span: Span) -> Result<Expr> {
+        let Some(function) = Function::from_word(name) else {
+            let message = format!("there is no function named {name}");
+            return Err(Error::Syntax(message, span));
+        };
+        let arg = if function == Function::Count && self.eat_symbol(Symbol::Star) {
+            None
+        } else {
+            Some(Box::new(self.expr(0)?))
+        };
+        self.expect_symbol(Symbol::RightParen)?;
+        Ok(Expr { kind: ExprKind::Call { function, arg }, span })
+    }
+    // @end
+
+    // @listing parse-group
+    /// `[GROUP BY expr, …] [HAVING expr]`
+    fn group_by(&mut self) -> Result<(Vec<Expr>, Option<Expr>)> {
+        let mut groups = Vec::new();
+        if self.eat_keyword(Keyword::Group) {
+            self.expect_keyword(Keyword::By)?;
+            groups.push(self.expr(0)?);
+            while self.eat_symbol(Symbol::Comma) {
+                groups.push(self.expr(0)?);
+            }
+        }
+        let having = if self.eat_keyword(Keyword::Having) {
+            Some(self.expr(0)?)
+        } else {
+            None
+        };
+        Ok((groups, having))
+    }
+    // @end
+
     // @listing parse-order
     /// `[ORDER BY expr [ASC | DESC], …]`
     fn order_by(&mut self) -> Result<Vec<OrderKey>> {
@@ -427,6 +467,11 @@ impl Parser {
             Token::Text(text) => ExprKind::Literal(Value::Text(text)),
             Token::Keyword(Keyword::Null) => ExprKind::Literal(Value::Null),
             Token::Ident(first) => {
+                // @hide
+                if self.eat_symbol(Symbol::LeftParen) {
+                    return self.call(&first, span);
+                }
+                // @show
                 if self.eat_symbol(Symbol::Dot) {
                     let name = self.name("a column name")?;
                     ExprKind::Column { table: Some(first), name }

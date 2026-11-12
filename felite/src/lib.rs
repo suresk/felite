@@ -1,3 +1,4 @@
+mod aggregate;
 mod bind;
 mod btree;
 mod catalog;
@@ -25,6 +26,7 @@ mod transaction;
 mod varint;
 mod wal;
 
+pub use aggregate::{Aggregate, AggregateCall};
 pub use bind::{Bound, BoundKind, Scope, ScopeColumn, Type, bind, bind_condition};
 pub use btree::{Cursor, Entry, MAX_CELL, TreeInfo, row_id, row_key};
 pub use btree::{
@@ -46,7 +48,7 @@ pub use shell::{format_rows, respond};
 pub use slotted::{SLOT_SIZE, SLOTTED_HEADER};
 pub use sort::{SORT_BUDGET, Sort, SortKey, SortStats};
 pub use sql::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind, Insert};
-pub use sql::{Delete, OrderKey, Update};
+pub use sql::{Delete, Function, OrderKey, Update};
 pub use sql::{Keyword, Span, Symbol, Token, explain, tokenize};
 pub use sql::{Select, SelectItem, Statement, UnaryOp, parse, parse_expr};
 pub use storage::{MemFile, Storage, TempFile, TempSpace};
@@ -90,3 +92,4 @@ pub use challenges::ch19::{atomically, dry_run, execute_script, insert_in_batche
 pub use challenges::ch20::{
     TopN, merge_passes, order_with, query_by_position, replacement_runs,
 };
+pub use challenges::ch21::{Fnv, SortedCount, count_distinct, hash_counts, median};

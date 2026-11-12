@@ -241,6 +241,14 @@ pub fn bind(expr: &Expr, scope: &Scope) -> Result<Bound> {
             let operand = Box::new(bind(operand, scope)?);
             (BoundKind::IsNull { operand, negated: *negated }, Type::Condition)
         }
+        // @hide
+        ExprKind::Call { function, .. } => {
+            let name = function.name();
+            return invalid(
+                span,
+                format!("{name} is an aggregate, and can't be used here"),
+            );
+        } // @show
     };
     Ok(Bound { kind, ty, span })
 }

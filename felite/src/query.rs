@@ -1,12 +1,13 @@
 //! SELECT: from a statement to a chain of operators, and from that to rows.
 
+use crate::aggregate::is_grouped;
 use crate::bind::{Bound, BoundKind, Scope, bind, bind_condition};
 use crate::catalog::fold;
 use crate::db::{Database, Output};
 use crate::error::Result;
 use crate::exec::{Filter, Limit, Operator, Project, Row, Scan};
 use crate::sort::{Sort, SortKey};
-use crate::sql::{ExprKind, Select, SelectItem, Span};
+use crate::sql::{Expr, ExprKind, OrderKey, Select, SelectItem, Span};
 
 // @listing result-set
 /// The rows a query produced, and a name for each of their columns.
@@ -54,28 +55,29 @@ fn select_list(
 // @end
 
 // @listing order-keys
-/// Checks an ORDER BY against the columns in scope. A key that is the name given
-/// to something in the SELECT list means that expression.
-fn order_keys(select: &Select, scope: &Scope) -> Result<Vec<SortKey>> {
-    let named = |wanted: &str| {
-        select.items.iter().find_map(|item| match item {
-            SelectItem::Expr { expr, alias: Some(alias) }
-                if fold(alias) == fold(wanted) =>
-            {
-                Some(expr)
-            }
-            _ => None,
-        })
+/// The expression that a key of an ORDER BY stands for. A key that is the name
+/// given to something in the SELECT list means that expression.
+pub(crate) fn key_expr<'a>(select: &'a Select, key: &'a OrderKey) -> &'a Expr {
+    let ExprKind::Column { table: None, name } = &key.expr.kind else {
+        return &key.expr;
     };
+    let named = select.items.iter().find_map(|item| match item {
+        SelectItem::Expr { expr, alias: Some(alias) }
+            if fold(alias) == fold(name) =>
+        {
+            Some(expr)
+        }
+        _ => None,
+    });
+    named.unwrap_or(&key.expr)
+}
+
+/// Checks an ORDER BY against the columns in scope.
+fn order_keys(select: &Select, scope: &Scope) -> Result<Vec<SortKey>> {
     let mut keys = Vec::new();
     for key in &select.order_by {
-        let expr = match &key.expr.kind {
-            ExprKind::Column { table: None, name } => {
-                named(name).unwrap_or(&key.expr)
-            }
-            _ => &key.expr,
-        };
-        keys.push(SortKey { expr: bind(expr, scope)?, descending: key.descending });
+        let expr = bind(key_expr(select, key), scope)?;
+        keys.push(SortKey { expr, descending: key.descending });
     }
     Ok(keys)
 }
@@ -84,6 +86,11 @@ fn order_keys(select: &Select, scope: &Scope) -> Result<Vec<SortKey>> {
 impl Database {
     // @listing select
     pub(crate) fn select(&mut self, select: &Select) -> Result<Output> {
+        // @hide
+        if is_grouped(select) {
+            return self.select_grouped(select);
+        }
+        // @show
         let table = self.table(&select.from)?.clone();
         let scope = Scope::of(&table);
         let (exprs, columns) = select_list(&select.items, &scope)?;

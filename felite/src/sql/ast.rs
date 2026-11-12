@@ -70,6 +70,10 @@ pub struct Select {
     pub limit: Option<usize>,
     /// How many rows to pass over first, if there is an OFFSET.
     pub offset: Option<usize>,
+    /// What to group the rows by. Empty if the statement has no GROUP BY.
+    pub group_by: Vec<Expr>,
+    /// The condition on groups, if there is a HAVING.
+    pub having: Option<Expr>,
     // @show
 }
 
@@ -140,6 +144,49 @@ pub enum ExprKind {
         operand: Box<Expr>,
         negated: bool,
     },
+    // @hide
+    /// An aggregate function and what it is applied to: `SUM(delay)`. Only
+    /// `COUNT(*)` has no argument.
+    Call {
+        function: Function,
+        arg: Option<Box<Expr>>,
+    },
+    // @show
+}
+// @end
+
+// @listing function
+/// The aggregate functions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Function {
+    Count,
+    Sum,
+    Min,
+    Max,
+    Avg,
+}
+
+impl Function {
+    const ALL: [(&str, Function); 5] = [
+        ("COUNT", Function::Count),
+        ("SUM", Function::Sum),
+        ("MIN", Function::Min),
+        ("MAX", Function::Max),
+        ("AVG", Function::Avg),
+    ];
+
+    /// The function a word names, in any mix of upper and lower case.
+    pub fn from_word(word: &str) -> Option<Function> {
+        let found =
+            Function::ALL.iter().find(|(name, _)| name.eq_ignore_ascii_case(word));
+        found.map(|(_, function)| *function)
+    }
+
+    /// How the function is written, in capitals.
+    pub fn name(self) -> &'static str {
+        let found = Function::ALL.iter().find(|(_, function)| *function == self);
+        found.map_or("?", |(name, _)| name)
+    }
 }
 // @end
 
@@ -212,6 +259,13 @@ impl fmt::Display for Expr {
             ExprKind::IsNull { operand, negated: true } => {
                 write!(f, "({operand} IS NOT NULL)")
             }
+            // @hide
+            ExprKind::Call { function, arg: Some(arg) } => {
+                write!(f, "{}({arg})", function.name())
+            }
+            ExprKind::Call { function, arg: None } => {
+                write!(f, "{}(*)", function.name())
+            } // @show
         }
     }
 }
@@ -256,6 +310,11 @@ impl fmt::Display for SelectItem {
 impl Select {
     /// Whether anything comes after the WHERE clause.
     fn has_tail(&self) -> bool {
+        // @hide
+        if !self.group_by.is_empty() || self.having.is_some() {
+            return true;
+        }
+        // @show
         !self.order_by.is_empty() || self.limit.is_some() || self.offset.is_some()
     }
 
@@ -264,6 +323,15 @@ impl Select {
         if let Some(filter) = &self.filter {
             write!(f, " WHERE {filter}")?;
         }
+        // @hide
+        for (i, group) in self.group_by.iter().enumerate() {
+            let before = if i == 0 { " GROUP BY " } else { ", " };
+            write!(f, "{before}{group}")?;
+        }
+        if let Some(having) = &self.having {
+            write!(f, " HAVING {having}")?;
+        }
+        // @show
         for (i, key) in self.order_by.iter().enumerate() {
             let before = if i == 0 { " ORDER BY " } else { ", " };
             let direction = if key.descending { " DESC" } else { "" };
