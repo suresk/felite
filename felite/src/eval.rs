@@ -102,6 +102,19 @@ fn comparison(op: BinaryOp, order: Ordering) -> bool {
 }
 // @end
 
+// @listing order
+/// How two values sort. NULL comes before everything else, and two NULLs are
+/// equal. The values must be of one type, apart from that.
+pub fn order(left: &Value, right: &Value) -> Ordering {
+    match (left, right) {
+        (Value::Null, Value::Null) => Ordering::Equal,
+        (Value::Null, _) => Ordering::Less,
+        (_, Value::Null) => Ordering::Greater,
+        _ => compare(left, right),
+    }
+}
+// @end
+
 // @listing logic
 /// AND and OR, where either side may be unknown. The right side is a closure, so
 /// that it is only worked out if the left side leaves the answer open.

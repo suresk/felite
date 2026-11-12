@@ -38,6 +38,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 15:
 | 17 | A write-ahead log | `src/wal.rs`, `src/pager.rs` |
 | 18 | Recovery and checkpoints | `src/wal.rs`, `src/pager.rs`, `examples/crash_test.rs` |
 | 19 | Transactions | `src/transaction.rs` |
+| 20 | Sorting | `src/sort.rs`, `src/storage.rs`, `fixtures/flights.sql` |
 
 Paths are inside `felite/`. Still to come: the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code

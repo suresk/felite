@@ -63,6 +63,14 @@ pub struct Select {
     pub items: Vec<SelectItem>,
     pub from: String,
     pub filter: Option<Expr>,
+    // @hide
+    /// What to sort the result by. Empty if the statement has no ORDER BY.
+    pub order_by: Vec<OrderKey>,
+    /// The most rows to return, if there is a LIMIT.
+    pub limit: Option<usize>,
+    /// How many rows to pass over first, if there is an OFFSET.
+    pub offset: Option<usize>,
+    // @show
 }
 
 /// One thing a SELECT asks for: every column, or an expression and perhaps a
@@ -71,6 +79,15 @@ pub struct Select {
 pub enum SelectItem {
     Star,
     Expr { expr: Expr, alias: Option<String> },
+}
+// @end
+
+// @listing order-key
+/// One key of an ORDER BY: an expression, and which way to sort by it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrderKey {
+    pub expr: Expr,
+    pub descending: bool,
 }
 // @end
 
@@ -235,6 +252,34 @@ impl fmt::Display for SelectItem {
     }
 }
 
+// @listing display-order
+impl Select {
+    /// Whether anything comes after the WHERE clause.
+    fn has_tail(&self) -> bool {
+        !self.order_by.is_empty() || self.limit.is_some() || self.offset.is_some()
+    }
+
+    /// Writes the WHERE clause and everything after it.
+    fn write_tail(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(filter) = &self.filter {
+            write!(f, " WHERE {filter}")?;
+        }
+        for (i, key) in self.order_by.iter().enumerate() {
+            let before = if i == 0 { " ORDER BY " } else { ", " };
+            let direction = if key.descending { " DESC" } else { "" };
+            write!(f, "{before}{}{direction}", key.expr)?;
+        }
+        if let Some(limit) = self.limit {
+            write!(f, " LIMIT {limit}")?;
+        }
+        if let Some(offset) = self.offset {
+            write!(f, " OFFSET {offset}")?;
+        }
+        Ok(())
+    }
+}
+// @end
+
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -282,6 +327,11 @@ impl fmt::Display for Statement {
                 write!(f, "SELECT ")?;
                 list(f, &select.items)?;
                 write!(f, " FROM {}", select.from)?;
+                // @hide
+                if select.has_tail() {
+                    return select.write_tail(f);
+                }
+                // @show
                 match &select.filter {
                     Some(filter) => write!(f, " WHERE {filter}"),
                     None => Ok(()),

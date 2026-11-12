@@ -154,7 +154,7 @@ fn insert_and_select() {
     assert!(insert.columns.is_empty());
     assert_eq!(insert.values[1].to_string(), "(2 + 3)");
 
-    let Statement::Select(Select { items, from, filter }) =
+    let Statement::Select(Select { items, from, filter, .. }) =
         parse("SELECT *, dep_delay / 60.0 AS hours FROM flights WHERE dep_delay > 0")
             .unwrap()
     else {

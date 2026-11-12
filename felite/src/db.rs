@@ -6,8 +6,9 @@ use crate::error::Result;
 use crate::overflow::load;
 use crate::pager::Pager;
 use crate::query::ResultSet;
+use crate::sort::SORT_BUDGET;
 use crate::sql::{CreateTable, Statement, parse};
-use crate::storage::Storage;
+use crate::storage::{Storage, TempSpace};
 use crate::transaction::Transaction;
 use std::collections::BTreeMap;
 use std::fs::OpenOptions;
@@ -21,6 +22,10 @@ pub struct Database {
     pub(crate) tables: BTreeMap<String, Table>,
     // @hide
     pub(crate) transaction: Transaction,
+    /// Where queries put their temporary files.
+    pub(crate) temp: TempSpace,
+    /// How many bytes a sort may hold in memory.
+    pub(crate) sort_budget: usize,
     // @show
 }
 
@@ -54,6 +59,8 @@ impl Database {
             tables,
             // @hide
             transaction: Transaction::Closed,
+            temp: TempSpace::Memory,
+            sort_budget: SORT_BUDGET,
             // @show
         })
     }
@@ -91,6 +98,17 @@ impl Database {
         let file = options.open(path)?;
         let log = options.open(format!("{path}-log"))?;
         Database::with_pager(Pager::open_logged(Box::new(file), Box::new(log))?)
+            // @hide
+            .map(|db| Database { temp: TempSpace::Beside(path.to_string()), ..db })
+        // @show
+    }
+    // @end
+
+    // @listing sort-budget
+    /// Sets how many bytes of rows a sort may hold in memory before it starts to
+    /// write them to a temporary file.
+    pub fn set_sort_budget(&mut self, bytes: usize) {
+        self.sort_budget = bytes;
     }
     // @end
 

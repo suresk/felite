@@ -112,3 +112,33 @@ impl Operator for Project {
     }
 }
 // @end
+
+// @listing limit
+/// Passes over the first `skip` rows of its input, hands on the next `take`, and
+/// then stops asking for more.
+pub struct Limit {
+    pub input: Box<dyn Operator>,
+    pub skip: usize,
+    /// How many rows are still to be handed on. `None` means all of them.
+    pub take: Option<usize>,
+}
+
+impl Operator for Limit {
+    fn next(&mut self, pager: &mut Pager) -> Result<Option<Row>> {
+        if self.take == Some(0) {
+            return Ok(None);
+        }
+        while self.skip > 0 {
+            if self.input.next(pager)?.is_none() {
+                return Ok(None);
+            }
+            self.skip -= 1;
+        }
+        let row = self.input.next(pager)?;
+        if let (Some(_), Some(take)) = (&row, &mut self.take) {
+            *take -= 1;
+        }
+        Ok(row)
+    }
+}
+// @end

@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::record::Value;
 use crate::sql::ast::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind};
-use crate::sql::ast::{Delete, Update};
+use crate::sql::ast::{Delete, OrderKey, Update};
 use crate::sql::ast::{Insert, Select, SelectItem, Statement, UnaryOp};
 use crate::sql::token::{Keyword, Span, Symbol, Token, tokenize};
 
@@ -261,7 +261,21 @@ impl Parser {
         let from = self.name("a table name")?;
         let filter =
             if self.eat_keyword(Keyword::Where) { Some(self.expr(0)?) } else { None };
-        Ok(Select { items, from, filter })
+        // @hide
+        let order_by = self.order_by()?;
+        let limit = self.count_after(Keyword::Limit)?;
+        let offset = self.count_after(Keyword::Offset)?;
+        // @show
+        Ok(Select {
+            items,
+            from,
+            filter,
+            // @hide
+            order_by,
+            limit,
+            offset,
+            // @show
+        })
     }
 
     fn select_item(&mut self) -> Result<SelectItem> {
@@ -275,6 +289,44 @@ impl Parser {
             None
         };
         Ok(SelectItem::Expr { expr, alias })
+    }
+    // @end
+}
+
+impl Parser {
+    // @listing parse-order
+    /// `[ORDER BY expr [ASC | DESC], …]`
+    fn order_by(&mut self) -> Result<Vec<OrderKey>> {
+        let mut keys = Vec::new();
+        if !self.eat_keyword(Keyword::Order) {
+            return Ok(keys);
+        }
+        self.expect_keyword(Keyword::By)?;
+        loop {
+            let expr = self.expr(0)?;
+            let descending = self.eat_keyword(Keyword::Desc);
+            if !descending {
+                self.eat_keyword(Keyword::Asc);
+            }
+            keys.push(OrderKey { expr, descending });
+            if !self.eat_symbol(Symbol::Comma) {
+                return Ok(keys);
+            }
+        }
+    }
+
+    /// `[keyword count]`, for LIMIT and OFFSET: a whole number, written out.
+    fn count_after(&mut self, keyword: Keyword) -> Result<Option<usize>> {
+        if !self.eat_keyword(keyword) {
+            return Ok(None);
+        }
+        match *self.peek() {
+            Token::Integer(count) if count >= 0 => {
+                self.advance();
+                Ok(Some(count as usize))
+            }
+            _ => self.expected("a count"),
+        }
     }
     // @end
 }
