@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 use crate::record::Value;
 use crate::sql::ast::{BinaryOp, ColumnDef, ColumnType, CreateTable, Expr, ExprKind};
-use crate::sql::ast::{Delete, Function, OrderKey, Update};
+use crate::sql::ast::{Delete, Function, Join, OrderKey, Update};
 use crate::sql::ast::{Insert, Select, SelectItem, Statement, UnaryOp};
 use crate::sql::token::{Keyword, Span, Symbol, Token, tokenize};
 
@@ -259,6 +259,10 @@ impl Parser {
         }
         self.expect_keyword(Keyword::From)?;
         let from = self.name("a table name")?;
+        // @hide
+        let alias = self.alias()?;
+        let joins = self.joins()?;
+        // @show
         let filter =
             if self.eat_keyword(Keyword::Where) { Some(self.expr(0)?) } else { None };
         // @hide
@@ -277,6 +281,8 @@ impl Parser {
             offset,
             group_by,
             having,
+            alias,
+            joins,
             // @show
         })
     }
@@ -297,6 +303,34 @@ impl Parser {
 }
 
 impl Parser {
+    // @listing parse-joins
+    /// `[[AS] name]`, after the name of a table.
+    fn alias(&mut self) -> Result<Option<String>> {
+        if self.eat_keyword(Keyword::As) || matches!(self.peek(), Token::Ident(_)) {
+            return Ok(Some(self.name("a name for the table")?));
+        }
+        Ok(None)
+    }
+
+    /// `{[INNER | LEFT] JOIN table [[AS] name] ON expr}`
+    fn joins(&mut self) -> Result<Vec<Join>> {
+        let mut joins = Vec::new();
+        loop {
+            let left = self.eat_keyword(Keyword::Left);
+            let inner = !left && self.eat_keyword(Keyword::Inner);
+            if left || inner {
+                self.expect_keyword(Keyword::Join)?;
+            } else if !self.eat_keyword(Keyword::Join) {
+                return Ok(joins);
+            }
+            let table = self.name("a table name")?;
+            let alias = self.alias()?;
+            self.expect_keyword(Keyword::On)?;
+            joins.push(Join { table, alias, left, on: self.expr(0)? });
+        }
+    }
+    // @end
+
     // @listing parse-call
     /// The rest of a function call, after `name(`.
     fn call(&mut self, name: &str, span: Span) -> Result<Expr> {

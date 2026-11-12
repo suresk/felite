@@ -213,8 +213,8 @@ fn good_error_messages() {
         "expected an expression, found the end of the statement"
     );
     assert_eq!(
-        message("SELECT a FROM t t2"),
-        "expected the end of the statement, found the name `t2`"
+        message("SELECT a FROM t 2"),
+        "expected the end of the statement, found the number 2"
     );
     assert_eq!(
         message("INSERT flights VALUES (1)"),

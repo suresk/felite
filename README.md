@@ -40,6 +40,7 @@ The repository grows with the book. So far it has the code for Chapters 1 to 15:
 | 19 | Transactions | `src/transaction.rs` |
 | 20 | Sorting | `src/sort.rs`, `src/storage.rs`, `fixtures/flights.sql` |
 | 21 | Aggregates | `src/aggregate.rs` |
+| 22 | Joins | `src/join.rs` |
 
 Paths are inside `felite/`. Still to come: the
 write-ahead log and crash recovery, and a query planner. Until the book is finished, code

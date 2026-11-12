@@ -394,7 +394,13 @@ impl Database {
     // @listing select-grouped
     pub(crate) fn select_grouped(&mut self, select: &Select) -> Result<Output> {
         let table = self.table(&select.from)?.clone();
+        // @hide
+        #[allow(unused_variables)]
+        // @show
         let scope = Scope::of(&table);
+        // @hide
+        let scope = self.scope_of(select)?;
+        // @show
         let condition = match &select.filter {
             Some(filter) => Some(bind_condition(filter, &scope, "WHERE")?),
             None => None,
@@ -418,6 +424,9 @@ impl Database {
 
         let mut plan: Box<dyn Operator> =
             Box::new(Scan::new(&table, &mut self.pager)?);
+        // @hide
+        plan = self.join_plan(select, plan)?;
+        // @show
         if let Some(condition) = condition {
             plan = Box::new(Filter { input: plan, condition });
         }

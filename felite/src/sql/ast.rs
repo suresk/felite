@@ -74,6 +74,10 @@ pub struct Select {
     pub group_by: Vec<Expr>,
     /// The condition on groups, if there is a HAVING.
     pub having: Option<Expr>,
+    /// Another name for the table in `from`, if the statement gives it one.
+    pub alias: Option<String>,
+    /// The tables joined to it, in the order they are written.
+    pub joins: Vec<Join>,
     // @show
 }
 
@@ -83,6 +87,18 @@ pub struct Select {
 pub enum SelectItem {
     Star,
     Expr { expr: Expr, alias: Option<String> },
+}
+// @end
+
+// @listing join
+/// `[LEFT] JOIN table [alias] ON condition`
+#[derive(Debug, Clone, PartialEq)]
+pub struct Join {
+    pub table: String,
+    pub alias: Option<String>,
+    /// Whether this is a LEFT JOIN, which keeps the rows that match nothing.
+    pub left: bool,
+    pub on: Expr,
 }
 // @end
 
@@ -306,6 +322,24 @@ impl fmt::Display for SelectItem {
     }
 }
 
+// @listing display-joins
+impl Select {
+    /// Writes the first table's other name, if it has one, and every JOIN.
+    fn write_joins(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let named = |alias: &Option<String>| match alias {
+            Some(alias) => format!(" {alias}"),
+            None => String::new(),
+        };
+        write!(f, "{}", named(&self.alias))?;
+        for join in &self.joins {
+            let kind = if join.left { " LEFT JOIN" } else { " JOIN" };
+            write!(f, "{kind} {}{} ON {}", join.table, named(&join.alias), join.on)?;
+        }
+        Ok(())
+    }
+}
+// @end
+
 // @listing display-order
 impl Select {
     /// Whether anything comes after the WHERE clause.
@@ -395,6 +429,9 @@ impl fmt::Display for Statement {
                 write!(f, "SELECT ")?;
                 list(f, &select.items)?;
                 write!(f, " FROM {}", select.from)?;
+                // @hide
+                select.write_joins(f)?;
+                // @show
                 // @hide
                 if select.has_tail() {
                     return select.write_tail(f);
