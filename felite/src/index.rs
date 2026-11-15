@@ -37,9 +37,12 @@ impl Index {
     /// A row's values in the indexed columns. `id` is the row's id, which is the
     /// value of the table's key column.
     pub fn values(&self, id: i64, row: &[Value]) -> Vec<Value> {
-        let value = |position: &usize| match self.key_column == Some(*position) {
-            true => Value::Integer(id),
-            false => row[*position].clone(),
+        let value = |&position: &usize| {
+            if self.key_column == Some(position) {
+                Value::Integer(id)
+            } else {
+                row[position].clone()
+            }
         };
         self.positions.iter().map(value).collect()
     }
@@ -104,7 +107,7 @@ impl Index {
         encode(&[
             Value::Text("index".to_string()),
             Value::Text(self.name.clone()),
-            Value::Integer(self.tree.root() as i64),
+            Value::Integer(i64::from(self.tree.root())),
             Value::Text(self.sql()),
         ])
     }
@@ -112,8 +115,8 @@ impl Index {
 }
 
 // @listing index-load
-/// What a row of the schema table says about an index: its statement, the root
-/// of its tree, and the schema row itself.
+/// An index as a row of the schema table records it: its statement, the root
+/// of its tree, and the id of the schema row itself.
 type Described = (CreateIndex, PageNo, i64);
 
 /// If a row of the schema table describes an index, returns the description.
@@ -150,14 +153,12 @@ pub(crate) fn attach_indexes(
 ) -> Result<()> {
     for (create, root, schema_row) in described {
         let bad =
-            Error::Corrupt(format!("schema row {schema_row}: an index on nothing"));
+            |what: String| Error::Corrupt(format!("schema row {schema_row}: {what}"));
         let Some(table) = tables.get_mut(&fold(&create.table)) else {
-            return Err(bad);
+            return Err(bad(format!("an index on a missing table {}", create.table)));
         };
-        let Ok(index) = Index::new(create, table, Tree::open(root), schema_row)
-        else {
-            return Err(bad);
-        };
+        let index = Index::new(create, table, Tree::open(root), schema_row)
+            .map_err(|error| bad(error.to_string()))?;
         table.indexes.push(index);
     }
     Ok(())
@@ -300,6 +301,7 @@ pub(crate) fn no_indexes(table: &Table) -> Result<()> {
 
 impl Database {
     // @listing create-index
+    /// Carries out CREATE INDEX: builds the tree, then records it.
     pub(crate) fn create_index(&mut self, create: CreateIndex) -> Result<Output> {
         let name = create.name.clone();
         let taken = |table: &Table| table.index(&name).is_some();
@@ -311,7 +313,7 @@ impl Database {
         let tree = Tree::create(&mut self.pager)?;
         let index = Index::new(create, &table, tree, schema_row)?;
         if let Err(error) = self.fill_index(&table, &index) {
-            // Give back the pages of the half-built tree.
+            // Return the partial tree's pages to the free list.
             index.tree.destroy(&mut self.pager)?;
             return Err(error);
         }

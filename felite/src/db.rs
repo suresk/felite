@@ -2,9 +2,10 @@
 
 use crate::btree::{Cursor, Tree, row_id};
 use crate::catalog::{Table, fold, key_column, sql_error};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::index::{attach_indexes, index_in_schema};
 use crate::overflow::load;
+use crate::page::PageNo;
 use crate::pager::Pager;
 use crate::query::ResultSet;
 use crate::sort::SORT_BUDGET;
@@ -12,7 +13,8 @@ use crate::sql::{CreateTable, Statement, parse};
 use crate::storage::{Storage, TempSpace};
 use crate::transaction::Transaction;
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::path::Path;
 
 // @listing database
 pub struct Database {
@@ -96,7 +98,7 @@ impl Database {
             }
             // @show
             let table = Table::from_schema(row_id(&key)?, &record)?;
-            tables.insert(fold(&table.name), table);
+            add_table(&mut tables, table, schema, pager.page_count()?)?;
         }
         // @hide
         attach_indexes(&mut tables, indexes)?;
@@ -113,6 +115,10 @@ impl Database {
         options.read(true).write(true).create(true).truncate(false);
         let file = options.open(path)?;
         let log = options.open(format!("{path}-log"))?;
+        // A new file's name is an entry in its directory, which syncing the file
+        // does not cover. Sync the directory too, so that both names survive.
+        let dir = Path::new(path).parent().filter(|dir| !dir.as_os_str().is_empty());
+        File::open(dir.unwrap_or(Path::new(".")))?.sync_all()?;
         Database::with_pager(Pager::open_logged(Box::new(file), Box::new(log))?)
             // @hide
             .map(|db| Database { temp: TempSpace::Beside(path.to_string()), ..db })
@@ -237,3 +243,30 @@ impl Database {
     }
     // @end
 }
+
+// @listing add-table
+/// Adds a table read from the schema table to `tables`, after checking that its
+/// name is free and that its root is a page of the file that no other tree uses.
+fn add_table(
+    tables: &mut BTreeMap<String, Table>,
+    table: Table,
+    schema: Tree,
+    page_count: PageNo,
+) -> Result<()> {
+    let row = table.schema_row;
+    let bad = |what| Err(Error::Corrupt(format!("schema row {row}: {what}")));
+    let root = table.tree.root();
+    if tables.contains_key(&fold(&table.name)) {
+        return bad(format!("a second table named {}", table.name));
+    }
+    if root >= page_count {
+        return bad(format!("root page {root} is past the end of the file"));
+    }
+    let taken = |other: &Table| other.tree.root() == root;
+    if root == schema.root() || tables.values().any(taken) {
+        return bad(format!("root page {root} belongs to another tree"));
+    }
+    tables.insert(fold(&table.name), table);
+    Ok(())
+}
+// @end

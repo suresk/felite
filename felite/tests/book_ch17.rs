@@ -2,6 +2,9 @@
 use felite::{CrashDisk, Database, MemFile, Output, Pager, Storage, Tree, Value};
 use felite::{FRAME_HEADER, FRAME_SIZE, LOG_HEADER, PAGE_SIZE};
 use felite::{hex_dump, log_checksum, row_key};
+use std::cell::Cell;
+use std::io;
+use std::rc::Rc;
 
 /// A small random number generator (xorshift), the same on every run.
 fn next(state: &mut u64) -> u64 {
@@ -219,7 +222,6 @@ fn a_commit_is_one_sync() {
     // @end
 }
 
-// @listing workload
 /// The 120 statements of Section 16.9.
 fn workload() -> Vec<String> {
     let mut sql = vec![
@@ -258,7 +260,67 @@ fn workload() -> Vec<String> {
     }
     sql
 }
+
+// @listing flaky
+/// A file in memory whose next sync fails when `fail` is set.
+#[derive(Clone, Default)]
+struct Flaky {
+    file: MemFile,
+    fail: Rc<Cell<bool>>,
+}
+
+impl Storage for Flaky {
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+        self.file.read_at(offset, buf)
+    }
+
+    fn write_at(&mut self, offset: u64, buf: &[u8]) -> io::Result<()> {
+        self.file.write_at(offset, buf)
+    }
+
+    fn size(&self) -> io::Result<u64> {
+        self.file.size()
+    }
+
+    fn sync(&mut self) -> io::Result<()> {
+        if self.fail.replace(false) {
+            return Err(io::Error::other("the disk failed"));
+        }
+        self.file.sync()
+    }
+}
 // @end
+
+#[test]
+fn a_failed_sync_poisons_the_log() {
+    // @listing poison-test
+    let (file, log) = (MemFile::new(), Flaky::default());
+    let pager = Pager::open_logged(Box::new(file.clone()), Box::new(log.clone()));
+    let mut pager = pager.unwrap();
+    let tree = Tree::create(&mut pager).unwrap();
+    pager.commit().unwrap();
+
+    // The commit's frame is written, and then its sync fails.
+    tree.insert(&mut pager, &row_key(1), b"first").unwrap();
+    log.fail.set(true);
+    let error = pager.commit().unwrap_err().to_string();
+    assert_eq!(error, "I/O error: the disk failed");
+
+    // The disk would sync now, but the log takes nothing more.
+    tree.insert(&mut pager, &row_key(2), b"second").unwrap();
+    let error = pager.commit().unwrap_err().to_string();
+    let reopen = "an earlier sync of the log failed; the database must be reopened";
+    assert_eq!(error, format!("I/O error: {reopen}"));
+    // @end
+
+    // Reopening runs recovery (Chapter 18), which finds the failed commit's frame
+    // in the log: the commit that returned an error took effect after all.
+    let pager = Pager::open_logged(Box::new(file), Box::new(log.file.clone()));
+    let mut pager = pager.unwrap();
+    let tree = Tree::open(tree.root());
+    assert_eq!(tree.get(&mut pager, &row_key(1)).unwrap(), Some(b"first".to_vec()));
+    assert_eq!(tree.get(&mut pager, &row_key(2)).unwrap(), None);
+}
 
 #[test]
 fn the_log_after_a_workload() {

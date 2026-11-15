@@ -46,6 +46,8 @@ fn writing_a_database_as_sql() {
     let mut db = fixture();
     db.execute("CREATE UNIQUE INDEX airports_code ON airports (code)").unwrap();
     db.execute("INSERT INTO carriers VALUES ('O''H', 'Quote''s Air')").unwrap();
+    db.execute("UPDATE flights SET delay = -9223372036854775807 - 1 WHERE id = 2736")
+        .unwrap();
     let sql = dump_sql(&mut db).unwrap();
     assert_eq!(sql.lines().count(), 3 + 16 + 334 + 200 + 1);
 
@@ -102,4 +104,15 @@ fn reading_a_sqlite_file() {
 
     assert!(sqlite_first_table(b"not a database").is_err());
     assert!(sqlite_first_table(&[0; 4096]).is_err());
+    // Numbers read from the file are checked, so a damaged file is an error
+    // and never a panic.
+    let file = include_bytes!("../fixtures/airports.sqlite");
+    assert!(sqlite_first_table(&file[..17]).is_err());
+    for at in (16..file.len()).step_by(37) {
+        for byte in [0x00, 0x7f, 0xff] {
+            let mut damaged = file.to_vec();
+            damaged[at] = byte;
+            let _ = sqlite_first_table(&damaged);
+        }
+    }
 }

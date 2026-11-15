@@ -74,10 +74,10 @@ fn dump(path: &str, page: u64) -> std::io::Result<()> {
 /// Prints the cells of page `page` of the file at `path`, if it is a slotted page.
 fn cells(path: &str, page: u64) -> std::io::Result<()> {
     let mut file = File::open(path)?;
-    let mut bytes = Page::new();
+    let mut contents = Page::new();
     file.seek(SeekFrom::Start(page * PAGE_SIZE as u64))?;
-    file.read_exact(bytes.bytes_mut())?;
-    match bytes.describe() {
+    file.read_exact(contents.bytes_mut())?;
+    match contents.describe() {
         Ok(text) => print!("{text}"),
         Err(e) => println!("page {page} is not a healthy slotted page: {e}"),
     }

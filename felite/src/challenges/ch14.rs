@@ -107,7 +107,7 @@ pub fn insert_select(db: &mut Database, into: &str, query: &str) -> Result<usize
         return sql_error("that statement is not a query".to_string());
     }
     let Output::Rows(result) = db.execute(query)? else {
-        return sql_error("that query returned no rows to insert".to_string());
+        return sql_error("that statement did not return rows".to_string());
     };
     let count = result.rows.len();
     for row in result.rows {

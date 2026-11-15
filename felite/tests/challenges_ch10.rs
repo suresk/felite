@@ -109,6 +109,7 @@ fn hexadecimal() {
     assert_eq!(hex_literal("0x10000000000000000"), None); // seventeen digits
     assert_eq!(hex_literal("0x"), None);
     assert_eq!(hex_literal("0xG1"), None);
+    assert_eq!(hex_literal("0x+1F"), None); // a sign is not a digit
     assert_eq!(hex_literal("1F"), None);
 }
 

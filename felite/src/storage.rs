@@ -19,7 +19,7 @@ pub trait Storage {
     /// The file's length in bytes.
     fn size(&self) -> io::Result<u64>;
 
-    /// Returns once everything written so far has reached the disk itself.
+    /// Blocks until every write made so far is on stable storage (an `fsync`).
     fn sync(&mut self) -> io::Result<()>;
 }
 // @end

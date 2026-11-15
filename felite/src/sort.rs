@@ -18,8 +18,8 @@ pub struct SortKey {
     pub descending: bool,
 }
 
-/// A row's value for one key. It knows its key's direction, so that comparing
-/// two of them gives the order their rows should come out in.
+/// A row's value for one key. It stores its key's direction, so that `cmp` on
+/// two of them yields the order their rows come out in.
 #[derive(Debug, Clone)]
 pub(crate) struct Key {
     pub(crate) value: Value,
@@ -79,7 +79,7 @@ struct Run {
     end: u64,
 }
 
-/// Hands on the rows of its input in the order of their keys. Rows whose keys
+/// Yields the rows of its input in the order of their keys. Rows whose keys
 /// are all equal stay in the order they arrived.
 pub struct Sort {
     input: Box<dyn Operator>,
@@ -180,15 +180,17 @@ impl Sort {
     /// Sorts the rows in memory and writes them to the end of the temporary file
     /// as one run.
     fn write_run(&mut self) -> Result<()> {
-        if self.file.is_none() {
-            self.file = Some(self.temp.create()?);
-        }
-        let Some(file) = &mut self.file else { unreachable!() };
+        let file = match &mut self.file {
+            Some(file) => file,
+            None => self.file.insert(self.temp.create()?),
+        };
         self.buffer.sort_by(|a, b| a.0.cmp(&b.0));
         let start = self.runs.last().map_or(0, |run| run.end);
         let mut end = start;
         for (_, record) in self.buffer.drain(..) {
-            let mut bytes = (record.len() as u32).to_be_bytes().to_vec();
+            let length = u32::try_from(record.len())
+                .map_err(|_| Error::TooLarge(record.len()))?;
+            let mut bytes = length.to_be_bytes().to_vec();
             bytes.extend_from_slice(&record);
             file.write_at(end, &bytes)?;
             end += bytes.len() as u64;
@@ -208,15 +210,17 @@ impl Sort {
         if at == end {
             return Ok(());
         }
-        let Some(file) = &mut self.file else { unreachable!() };
+        let file = self.file.as_mut().expect("a sort with runs has a temporary file");
         let mut prefix = [0; PREFIX];
         file.read_at(at, &mut prefix)?;
-        let next = at + (PREFIX + u32::from_be_bytes(prefix) as usize) as u64;
+        let length = u32::from_be_bytes(prefix);
+        let next = at + PREFIX as u64 + u64::from(length);
         if next > end {
             let what = "a sorted run ends in the middle of a row";
             return Err(Error::Corrupt(what.to_string()));
         }
-        let mut record = vec![0; (next - at) as usize - PREFIX];
+        // `length` is a `u32` that fits inside the run, so it fits a `usize`.
+        let mut record = vec![0; length as usize];
         file.read_at(at + PREFIX as u64, &mut record)?;
         self.runs[run].at = next;
 

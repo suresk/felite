@@ -13,6 +13,7 @@ use crate::index::{Index, IndexScan};
 use crate::keys::{after, encode_key};
 use crate::pager::Pager;
 use crate::record::Value;
+use crate::sql::ColumnType;
 
 // @listing decode-key
 /// The values that a key was made from. An index entry's key gives the indexed
@@ -149,6 +150,23 @@ impl IndexLoop {
 }
 // @end
 
+// @listing index-loop-probe
+/// An outer row's key as a value of the indexed column's type, if it can be
+/// equal to one: an integer for a REAL column becomes a real, and a real with
+/// no fraction for an INTEGER column becomes an integer.
+fn probe(value: Value, column: ColumnType) -> Option<Value> {
+    match (column, value) {
+        (_, Value::Null) => None,
+        (ColumnType::Real, Value::Integer(i)) => Some(Value::Real(i as f64)),
+        (ColumnType::Integer, Value::Real(x)) => {
+            let whole = x.fract() == 0.0 && x >= -2f64.powi(63) && x < 2f64.powi(63);
+            whole.then_some(Value::Integer(x as i64))
+        }
+        (_, value) => Some(value),
+    }
+}
+// @end
+
 // @listing index-loop-next
 impl Operator for IndexLoop {
     fn next(&mut self, pager: &mut Pager) -> Result<Option<Row>> {
@@ -164,11 +182,14 @@ impl Operator for IndexLoop {
             let Some(outer) = self.outer.next(pager)? else {
                 return Ok(None);
             };
-            // A NULL matches nothing. Go round for the next outer row.
-            let from = match eval(&self.key, &outer)? {
-                Value::Null => continue,
-                value => encode_key(&[value]),
+            // The key becomes a value of the indexed column's type, since 2 and
+            // 2.0 are different bytes. A key that can equal no value of that
+            // type, NULL among them, opens nothing.
+            let column = self.inner.columns[self.index.positions[0]].kind;
+            let Some(value) = probe(eval(&self.key, &outer)?, column) else {
+                continue;
             };
+            let from = encode_key(&[value]);
             let until = Some(after(&from));
             let scan = IndexScan::new(&self.inner, &self.index, pager, &from, until)?;
             self.current = Some((outer, scan));

@@ -12,9 +12,13 @@ use crate::sql::{CreateTable, Expr, ExprKind, Span, Statement};
 /// then its indexes.
 pub fn dump_sql(db: &mut Database) -> Result<String> {
     let span = Span { offset: 0, line: 1, column: 1 };
-    // `Display for Expr` already writes a value as SQL would have it.
-    let literal =
-        |value: Value| Expr { kind: ExprKind::Literal(value), span }.to_string();
+    // `Display for Expr` already writes a value as SQL would have it, except
+    // the smallest integer: the tokenizer reads the number apart from its
+    // minus sign, and 9223372036854775808 is too large for an integer.
+    let literal = |value: Value| match value {
+        Value::Integer(i64::MIN) => "(-9223372036854775807 - 1)".to_string(),
+        value => Expr { kind: ExprKind::Literal(value), span }.to_string(),
+    };
     let mut out = String::new();
     let tables: Vec<_> = db.tables().cloned().collect();
     for table in tables {
@@ -65,10 +69,13 @@ fn sqlite_varint(bytes: &[u8]) -> Result<(i64, usize)> {
 /// Decodes one of SQLite's records: a header of serial types, then the values.
 fn sqlite_record(payload: &[u8]) -> Result<Row> {
     let (header_size, mut at) = sqlite_varint(payload)?;
-    let mut body = header_size as usize;
-    let mut row = Vec::new();
-    while at < header_size as usize {
-        let (serial, used) = sqlite_varint(payload.get(at..).unwrap_or(&[]))?;
+    let header_end = match usize::try_from(header_size) {
+        Ok(size) if size <= payload.len() => size,
+        _ => return bad("a record header longer than the record"),
+    };
+    let (mut body, mut row) = (header_end, Vec::new());
+    while at < header_end {
+        let (serial, used) = sqlite_varint(&payload[at..])?;
         at += used;
         // How many bytes of the body this value has.
         let size = match serial {
@@ -79,7 +86,8 @@ fn sqlite_record(payload: &[u8]) -> Result<Row> {
             n if n >= 12 => (n as usize - 12) / 2,
             _ => return bad("a serial type that means nothing"),
         };
-        let Some(bytes) = payload.get(body..body + size) else {
+        let end = body.checked_add(size);
+        let Some(bytes) = end.and_then(|end| payload.get(body..end)) else {
             return bad("a record shorter than its header says");
         };
         body += size;
@@ -125,8 +133,10 @@ impl SqliteFile<'_> {
         if n == 0 || self.page_size < 512 {
             return bad("a page number or a page size of nothing");
         }
-        let start = (n - 1) * self.page_size;
-        let Some(page) = self.bytes.get(start..start + self.page_size) else {
+        let start = (n - 1).checked_mul(self.page_size);
+        let end = start.and_then(|start| start.checked_add(self.page_size));
+        let Some(page) = start.zip(end).and_then(|(s, e)| self.bytes.get(s..e))
+        else {
             return bad("a page past the end of the file");
         };
         if depth > 20 {
@@ -160,8 +170,14 @@ impl SqliteFile<'_> {
                 13 => {
                     let (size, a) = sqlite_varint(cell)?;
                     let (id, b) = sqlite_varint(&cell[a..])?;
-                    let Some(payload) = cell.get(a + b..a + b + size as usize) else {
-                        return bad("a row that spills onto overflow pages");
+                    // A payload larger than the page less 35 bytes continues
+                    // on overflow pages, which this reader doesn't follow.
+                    let size = match usize::try_from(size) {
+                        Ok(size) if size <= self.page_size - 35 => size,
+                        _ => return bad("a row that spills onto overflow pages"),
+                    };
+                    let Some(payload) = cell.get(a + b..a + b + size) else {
+                        return bad("a row that runs off its page");
                     };
                     found.push((id, sqlite_record(payload)?));
                 }
@@ -182,7 +198,10 @@ pub fn sqlite_first_table(bytes: &[u8]) -> Result<Vec<(i64, Row)>> {
     if bytes.get(..16) != Some(b"SQLite format 3\0") {
         return bad("the first sixteen bytes are not SQLite's");
     }
-    let page_size = match u16::from_be_bytes([bytes[16], bytes[17]]) {
+    let Some(&[high, low]) = bytes.get(16..18) else {
+        return bad("a header cut short");
+    };
+    let page_size = match u16::from_be_bytes([high, low]) {
         1 => 65536,
         size => size as usize,
     };
@@ -195,7 +214,8 @@ pub fn sqlite_first_table(bytes: &[u8]) -> Result<Vec<(i64, Row)>> {
             && kind == "table"
         {
             let mut found = Vec::new();
-            file.rows(*root as usize, 0, &mut found)?;
+            // A root that is no page number fails as page 0 does.
+            file.rows(usize::try_from(*root).unwrap_or(0), 0, &mut found)?;
             return Ok(found);
         }
     }

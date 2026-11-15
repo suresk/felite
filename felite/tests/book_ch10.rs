@@ -100,6 +100,8 @@ fn numbers() {
         ("a number runs straight into a word".to_string(), 1, 1)
     );
     assert_eq!(error("1e"), ("a number runs straight into a word".to_string(), 1, 1));
+    // A real too large for an f64 would parse as infinity, so it is refused.
+    assert_eq!(error("1e999"), ("1e999 is too large for a real".to_string(), 1, 1));
     // @end
 }
 
@@ -167,10 +169,10 @@ fn comments_and_positions() {
         (Token::Keyword(Keyword::From), Span { offset: 21, line: 2, column: 3 })
     );
 
-    // A column counts characters, and an offset counts bytes. They part company
-    // after the first character that takes more than one byte.
-    let found = tokenize("'Zürich' x").unwrap();
-    assert_eq!(found[1].1, Span { offset: 10, line: 1, column: 10 });
+    // A column counts chars, and an offset counts bytes. Each of ü and é is one
+    // char and two bytes, so the x is char 12 of its line but starts at byte 13.
+    let found = tokenize("'Zürich' é x").unwrap();
+    assert_eq!(found[2].1, Span { offset: 13, line: 1, column: 12 });
     // @end
 }
 

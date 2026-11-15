@@ -15,11 +15,8 @@ fn numbered(pages: u32) -> MemFile {
     file
 }
 
-// @challenge 1 3
-use felite::clock_misses;
-
 // @challenge 3
-use felite::lru_misses;
+use felite::{clock_misses, lru_misses};
 
 // @challenge 4
 use felite::{Counting, FailAfter};
@@ -27,7 +24,7 @@ use felite::{Counting, FailAfter};
 // @challenge 5
 use felite::SharedPool;
 
-// @challenge 1 3
+// @challenge 1
 #[test]
 fn predict_reads_and_evictions() {
     let mut pager = Pager::with_capacity(Box::new(numbered(10)), 4).unwrap();
@@ -39,9 +36,6 @@ fn predict_reads_and_evictions() {
     assert_eq!(stats.reads, 1 + 7);
     assert_eq!(stats.evictions, 8 - 4);
     assert_eq!(stats.writes, 0);
-    // The same answer from the simulator, which has no header to carry: three
-    // frames, the same requests.
-    assert_eq!(clock_misses(3, &[1, 2, 3, 1, 4, 5, 1, 2, 6, 1], false), 7);
 }
 
 // @challenge 2
@@ -94,6 +88,27 @@ fn clock_and_lru_on_the_same_traces() {
         clock_misses(8, &trace, true),
     );
     assert_eq!(all, (503, 503, 650));
+
+    // The same again, but each scan page is asked for three times in a row, as
+    // `Cursor::next` asks for its leaf once per row. The second request sets the
+    // bit, and our clock does worse than either of the others.
+    let mut trace = Vec::new();
+    for page in (100..600).step_by(5) {
+        trace.extend([1, 2, 3]);
+        for scan in page..page + 5 {
+            trace.extend([scan, scan, scan]);
+        }
+    }
+    let all = (
+        lru_misses(8, &trace),
+        clock_misses(8, &trace, false),
+        clock_misses(8, &trace, true),
+    );
+    assert_eq!(all, (503, 797, 650));
+
+    // Challenge 9.1's requests, with three frames standing for the pager's four
+    // (the simulator has no header to carry): the same seven misses.
+    assert_eq!(clock_misses(3, &[1, 2, 3, 1, 4, 5, 1, 2, 6, 1], false), 7);
 }
 
 // @challenge 4

@@ -91,9 +91,21 @@ impl Page {
         Ok(content - slots_end)
     }
 
+    /// The bytes in holes, checked against the cell area they sit in.
+    fn fragmented(&self) -> Result<usize> {
+        let cells = PAGE_SIZE - self.slots_end()? - self.gap()?;
+        let fragmented = self.u16_at(FRAGMENTED_AT) as usize;
+        if fragmented > cells {
+            return Err(Error::Corrupt(format!(
+                "{fragmented} bytes of holes among {cells} bytes of cells"
+            )));
+        }
+        Ok(fragmented)
+    }
+
     /// Every unused byte: the gap, and the holes that removed cells left behind.
     pub fn free_space(&self) -> Result<usize> {
-        Ok(self.gap()? + self.u16_at(FRAGMENTED_AT) as usize)
+        Ok(self.gap()? + self.fragmented()?)
     }
     // @end
 
@@ -131,14 +143,14 @@ impl Page {
     /// Removes cell `i`. The cells after it move down by one.
     pub fn remove_cell(&mut self, i: usize) -> Result<()> {
         let (start, len) = self.slot(i)?;
+        let fragmented = self.fragmented()?;
         let count = self.cell_count();
         self.bytes_mut()[start..start + len].fill(0);
         if start == self.u16_at(CONTENT_AT) as usize {
             // The lowest cell: the gap grows to take its place.
             self.put_u16(CONTENT_AT, (start + len) as u16);
         } else {
-            let fragmented = self.u16_at(FRAGMENTED_AT) as usize + len;
-            self.put_u16(FRAGMENTED_AT, fragmented as u16);
+            self.put_u16(FRAGMENTED_AT, (fragmented + len) as u16);
         }
         let at = SLOTTED_HEADER + SLOT_SIZE * i;
         let slots_end = self.slots_end()?;

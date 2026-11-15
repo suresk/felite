@@ -39,10 +39,16 @@ pub fn atomically<T>(
 ) -> Result<T> {
     db.execute("BEGIN")?;
     match work(db) {
-        Ok(value) => {
-            db.execute("COMMIT")?;
-            Ok(value)
-        }
+        Ok(value) => match db.execute("COMMIT") {
+            Ok(_) => Ok(value),
+            // The closure may have carried on past a failed statement, and a
+            // failed transaction refuses COMMIT. It must still be ended.
+            Err(error) if db.transaction() != Transaction::Closed => {
+                db.execute("ROLLBACK")?;
+                Err(error)
+            }
+            Err(error) => Err(error),
+        },
         Err(error) => {
             // The error may have come from a statement, which has already undone
             // the work, or from the closure's own code, which has not.
@@ -72,14 +78,17 @@ pub fn dry_run(db: &mut Database, sql: &str) -> Result<Output> {
 /// Inserts the numbers below `rows` into table `t`, committing after every
 /// `batch` of them.
 pub fn insert_in_batches(db: &mut Database, rows: usize, batch: usize) -> Result<()> {
-    for n in 0..rows {
-        if n % batch == 0 {
-            db.execute("BEGIN")?;
+    let batch = batch.max(1);
+    for start in (0..rows).step_by(batch) {
+        db.execute("BEGIN")?;
+        for n in start..rows.min(start + batch) {
+            let insert = format!("INSERT INTO t (n) VALUES ({n})");
+            if let Err(error) = db.execute(&insert) {
+                db.execute("ROLLBACK")?;
+                return Err(error);
+            }
         }
-        db.execute(&format!("INSERT INTO t (n) VALUES ({n})"))?;
-        if n % batch == batch - 1 || n == rows - 1 {
-            db.execute("COMMIT")?;
-        }
+        db.execute("COMMIT")?;
     }
     Ok(())
 }

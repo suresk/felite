@@ -7,7 +7,7 @@ use std::io;
 // @listing error
 #[derive(Debug)]
 pub enum Error {
-    /// The operating system refused a read or a write.
+    /// A read, write or sync returned an I/O error.
     Io(io::Error),
     /// The file's contents are not something felite wrote.
     Corrupt(String),
@@ -34,8 +34,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Io(e) => write!(f, "I/O error: {e}"),
-            Error::Corrupt(what) => write!(f, "corrupt database: {what}"),
             // @hide
             Error::DuplicateKey => write!(f, "that key is already present"),
             Error::TooLarge(n) => write!(f, "an entry of {n} bytes is too large"),
@@ -54,7 +52,10 @@ impl fmt::Display for Error {
                     "syntax error at line {}, column {}: {message}",
                     at.line, at.column
                 )
-            } // @show
+            }
+            // @show
+            Error::Io(e) => write!(f, "I/O error: {e}"),
+            Error::Corrupt(what) => write!(f, "corrupt database: {what}"),
         }
     }
 }

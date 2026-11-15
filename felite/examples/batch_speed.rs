@@ -1,7 +1,18 @@
 //! Rows inserted per second on a real disk, by the number of rows in each
 //! transaction: `cargo run --release --example batch_speed`.
-use felite::{Database, insert_in_batches};
+use felite::Database;
 use std::time::Instant;
+
+/// Inserts the numbers below `rows` into `t`, committing after every `batch`.
+fn insert(db: &mut Database, rows: usize, batch: usize) {
+    for start in (0..rows).step_by(batch) {
+        db.execute("BEGIN").unwrap();
+        for n in start..rows.min(start + batch) {
+            db.execute(&format!("INSERT INTO t (n) VALUES ({n})")).unwrap();
+        }
+        db.execute("COMMIT").unwrap();
+    }
+}
 
 fn main() {
     let path = std::env::temp_dir().join("batch.db").to_string_lossy().into_owned();
@@ -15,7 +26,7 @@ fn main() {
         let mut db = Database::open_file(&path).unwrap();
         db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").unwrap();
         let start = Instant::now();
-        insert_in_batches(&mut db, rows, batch).unwrap();
+        insert(&mut db, rows, batch);
         let rate = rows as f64 / start.elapsed().as_secs_f64();
         println!("{batch:>8}  {rate:>12.0}");
     }

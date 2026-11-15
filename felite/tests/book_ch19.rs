@@ -1,6 +1,6 @@
 //! The examples in Chapter 19: `cargo test --test book_ch19`.
 use felite::{CrashDisk, DEFAULT_FRAMES, Database, MemFile, Output, Pager, Storage};
-use felite::{Transaction, Value};
+use felite::{Fate, Transaction, Value};
 
 /// A small random number generator (xorshift), the same on every run.
 fn next(state: &mut u64) -> u64 {
@@ -61,7 +61,7 @@ const BONUS: &str =
 #[test]
 fn a_statement_that_fails() {
     // @listing fail-test
-    // With no log, as in every chapter before this one.
+    // With no log, as in every chapter up to 16.
     let disk = CrashDisk::new();
     let mut db = Database::open(Box::new(disk.clone())).unwrap();
     db.execute(
@@ -86,7 +86,7 @@ fn a_statement_that_fails() {
     disk.stop_after(2);
     assert!(db.execute(BONUS).is_err());
     assert_eq!(total(&mut db), 60_000);
-    assert_eq!(db.pager().log_frames(), 612); // the two frames it wrote are forgotten
+    assert_eq!(db.pager().log_frames(), 612); // the two frames it wrote are discarded
     db.check().unwrap();
     // @end
 }
@@ -101,7 +101,7 @@ fn begin_and_commit() {
     assert_eq!(db.transaction(), Transaction::Open);
     db.execute("UPDATE accounts SET balance = balance - 30 WHERE id = 1").unwrap();
     db.execute("UPDATE accounts SET balance = balance + 30 WHERE id = 600").unwrap();
-    // Two statements have run, and the disk has not heard about either.
+    // Two statements have run with no write and no sync.
     assert_eq!((disk.writes(), disk.syncs()), before);
     // The transaction can see its own changes.
     let balances = "SELECT balance FROM accounts WHERE id = 1 OR id = 600";
@@ -162,6 +162,7 @@ fn a_transfer_at_every_crash_point() {
 fn rolling_back() {
     // @listing rollback-test
     let (mut db, disk, _) = bank();
+    let writes = disk.writes();
     let before = (db.pager().page_count().unwrap(), db.pager().log_frames());
     assert_eq!(before, (7, 612));
 
@@ -184,7 +185,8 @@ fn rolling_back() {
     assert_eq!((db.pager().page_count().unwrap(), db.pager().log_frames()), before);
     assert_eq!(db.pager().free_count().unwrap(), 0);
     db.check().unwrap();
-    assert_eq!(disk.pending(), 0);
+    // None of it, the rollback included, wrote to either file.
+    assert_eq!(disk.writes(), writes);
     // @end
 }
 
@@ -257,6 +259,46 @@ fn a_transaction_that_fails() {
     assert_eq!(db.transaction(), Transaction::Closed);
     assert_eq!(numbers(&mut db, "SELECT id FROM accounts WHERE id > 600"), []);
     assert_eq!(total(&mut db), 60_000);
+    // @end
+
+    // @listing syntax-failed-test
+    // A statement that can't be parsed fails the transaction too, so the second
+    // half of the transfer is refused.
+    db.execute("BEGIN").unwrap();
+    let debit = "UPDTE accounts SET balance = balance - 30 WHERE id = 1";
+    assert!(db.execute(debit).is_err());
+    assert_eq!(db.transaction(), Transaction::Failed);
+    let credit = "UPDATE accounts SET balance = balance + 30 WHERE id = 600";
+    assert_eq!(db.execute(credit).unwrap_err().to_string(), refused);
+    db.execute("ROLLBACK").unwrap();
+    assert_eq!(total(&mut db), 60_000);
+    // @end
+}
+
+#[test]
+fn a_commit_that_fails() {
+    // @listing failed-commit-test
+    let balances = "SELECT balance FROM accounts WHERE id = 1 OR id = 600";
+    let credit = "UPDATE accounts SET balance = balance + 30 WHERE id = 600";
+    let (mut db, disk, log) = bank();
+    db.execute("BEGIN").unwrap();
+    db.execute("UPDATE accounts SET balance = balance - 30 WHERE id = 1").unwrap();
+    db.execute(credit).unwrap();
+    // Both frames are written, and then the sync fails.
+    disk.stop_after(2);
+    let error = db.execute("COMMIT").unwrap_err().to_string();
+    assert!(error.ends_with("unknown until the database is reopened"));
+    // This program shows the balances of the last commit it knows of, and the
+    // log takes no more writes.
+    assert_eq!(numbers(&mut db, balances), [100, 100]);
+    let refused = db.execute(credit).unwrap_err().to_string();
+    assert!(refused.contains("an earlier sync of the log failed"));
+
+    // The next program may find the transfer done, or not done.
+    let mut killed = open(disk.kill(), log.kill());
+    assert_eq!(numbers(&mut killed, balances), [70, 130]);
+    let mut cut = open(disk.crash(|_| Fate::Lost), log.crash(|_| Fate::Lost));
+    assert_eq!(numbers(&mut cut, balances), [100, 100]);
     // @end
 }
 

@@ -9,7 +9,7 @@ use crate::eval::{eval, order};
 use crate::exec::{Operator, Row};
 use crate::pager::Pager;
 use crate::record::Value;
-use crate::sort::SortKey;
+use crate::sort::{Key, SortKey};
 use crate::sql::{ExprKind, Select, SelectItem, Statement, parse};
 use std::cmp::{Ordering, Reverse};
 use std::collections::BinaryHeap;
@@ -18,20 +18,14 @@ use std::collections::BinaryHeap;
 /// A row with what it takes to rank it: its keys, and its place in the input
 /// to settle ties.
 struct Ranked {
-    keys: Vec<(Value, bool)>,
+    keys: Vec<Key>,
     place: usize,
     row: Row,
 }
 
 impl Ord for Ranked {
     fn cmp(&self, other: &Ranked) -> Ordering {
-        for ((a, descending), (b, _)) in self.keys.iter().zip(&other.keys) {
-            let by = if *descending { order(b, a) } else { order(a, b) };
-            if by != Ordering::Equal {
-                return by;
-            }
-        }
-        self.place.cmp(&other.place)
+        self.keys.cmp(&other.keys).then(self.place.cmp(&other.place))
     }
 }
 
@@ -77,7 +71,9 @@ impl TopN {
         let mut best = BinaryHeap::new();
         let mut place = 0;
         while let Some(row) = self.input.next(pager)? {
-            let key = |k: &SortKey| Ok((eval(&k.expr, &row)?, k.descending));
+            let key = |k: &SortKey| {
+                Ok(Key { value: eval(&k.expr, &row)?, descending: k.descending })
+            };
             let keys = self.keys.iter().map(key).collect::<Result<_>>()?;
             best.push(Ranked { keys, place, row });
             place += 1;

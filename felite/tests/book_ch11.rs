@@ -44,7 +44,7 @@ fn precedence() {
     assert_eq!(grouped("1 + 2 * 3"), "(1 + (2 * 3))");
     assert_eq!(grouped("1 * 2 + 3"), "((1 * 2) + 3)");
     assert_eq!(grouped("(1 + 2) * 3"), "((1 + 2) * 3)");
-    // Operators of the same strength group from the left.
+    // Operators of the same binding power group from the left.
     assert_eq!(grouped("1 - 2 - 3"), "((1 - 2) - 3)");
     assert_eq!(grouped("8 / 4 / 2"), "((8 / 4) / 2)");
     assert_eq!(grouped("1 - 2 + 3"), "((1 - 2) + 3)");
@@ -64,7 +64,7 @@ fn prefix_operators() {
     assert_eq!(grouped("-a * b"), "((-a) * b)");
     assert_eq!(grouped("a - -b"), "(a - (-b))");
     assert_eq!(grouped("- - a"), "(-(-a))");
-    // NOT is weaker than a comparison and stronger than AND.
+    // NOT binds looser than a comparison and tighter than AND.
     assert_eq!(grouped("NOT a = b"), "(NOT (a = b))");
     assert_eq!(grouped("NOT a = b OR c"), "((NOT (a = b)) OR c)");
     assert_eq!(grouped("NOT a AND b"), "((NOT a) AND b)");
@@ -237,7 +237,10 @@ fn good_error_messages() {
         message("ALTER TABLE t"),
         "expected a statement, found the name `ALTER`"
     );
-    assert_eq!(message("a IS 3"), "expected a statement, found the name `a`");
+    assert_eq!(
+        message("SELECT a IS 3 FROM t"),
+        "expected `NULL`, found the number 3"
+    );
     // An error from the tokenizer comes through unchanged.
     assert_eq!(message("SELECT 'oops FROM t"), "this string is never closed");
     // @end
@@ -269,9 +272,11 @@ fn nesting_has_a_limit() {
         error.to_string(),
         "syntax error at line 1, column 101: an expression more than 100 levels deep"
     );
-    // The same for a hundred thousand minus signs, and for a sum of that many ones.
+    // The same for a hundred thousand minus signs, a sum of that many ones, and
+    // a chain of that many IS NULL tests.
     assert!(parse_expr(&format!("{}1", "-".repeat(100_000))).is_err());
     assert!(parse_expr(&format!("1{}", " + 1".repeat(100_000))).is_err());
+    assert!(parse_expr(&format!("a{}", " IS NULL".repeat(100_000))).is_err());
 
     // Expressions of a sensible size are untouched by the limit.
     assert!(parse_expr(&format!("{}1{}", "(".repeat(90), ")".repeat(90))).is_ok());

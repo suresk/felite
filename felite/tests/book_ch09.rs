@@ -209,3 +209,59 @@ fn reads_per_lookup() {
     );
     // @end
 }
+
+/// A `MemFile` whose reads can be made to fail.
+struct Flaky {
+    file: MemFile,
+    fail: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl Storage for Flaky {
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        if self.fail.get() {
+            return Err(std::io::Error::other("bad sector"));
+        }
+        self.file.read_at(offset, buf)
+    }
+    fn write_at(&mut self, offset: u64, buf: &[u8]) -> std::io::Result<()> {
+        self.file.write_at(offset, buf)
+    }
+    fn size(&self) -> std::io::Result<u64> {
+        self.file.size()
+    }
+    fn sync(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_failed_read_leaves_the_clock_as_it_was() {
+    // Which pages are still in memory after pages 2, 1 and 3 are read into a pool
+    // of three frames (the header takes one), with or without a failed read of
+    // page 1 first. The clock must evict page 2, the older one, either way.
+    let rereads = |fail_first: bool| {
+        let file = MemFile::new();
+        let mut pager = Pager::open(Box::new(file.clone())).unwrap();
+        for _ in 0..4 {
+            pager.allocate(Page::new()).unwrap();
+        }
+        pager.flush().unwrap();
+        let fail = std::rc::Rc::new(std::cell::Cell::new(false));
+        let storage = Flaky { file, fail: fail.clone() };
+        let mut pager = Pager::with_capacity(Box::new(storage), 3).unwrap();
+        if fail_first {
+            fail.set(true);
+            assert!(pager.page(1).is_err());
+            fail.set(false);
+        }
+        for n in [2, 1, 3] {
+            pager.page(n).unwrap();
+        }
+        let reads = pager.stats().reads;
+        pager.page(1).unwrap();
+        pager.page(3).unwrap();
+        pager.stats().reads - reads
+    };
+    assert_eq!(rereads(false), 0);
+    assert_eq!(rereads(true), 0);
+}

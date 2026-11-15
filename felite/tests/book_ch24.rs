@@ -133,15 +133,24 @@ fn estimating_rows() {
     // @listing estimate-test
     let (mut db, _) = fixture();
     db.execute("CREATE TABLE empty (n INTEGER)").unwrap();
-    let mut estimate = |name: &str| {
+    let estimate = |db: &mut Database, name: &str| {
         let tree = db.table(name).unwrap().tree;
         (tree.estimate(db.pager()).unwrap(), tree.check(db.pager()).unwrap().entries)
     };
     // The guess, and the truth.
-    assert_eq!(estimate("carriers"), (15, 15));
-    assert_eq!(estimate("flights"), (240, 200));
-    assert_eq!(estimate("airports"), (387, 334));
-    assert_eq!(estimate("empty"), (0, 0));
+    assert_eq!(estimate(&mut db, "carriers"), (15, 15));
+    assert_eq!(estimate(&mut db, "flights"), (240, 200));
+    assert_eq!(estimate(&mut db, "airports"), (387, 334));
+    assert_eq!(estimate(&mut db, "empty"), (0, 0));
+    // A queue drained from the front. Its first leaf is less than half full,
+    // so the guess comes from the middle of the tree.
+    db.execute("CREATE TABLE queue (id INTEGER PRIMARY KEY, job TEXT)").unwrap();
+    for id in 1..=3000 {
+        let job = format!("'job number {id:04}'");
+        db.execute(&format!("INSERT INTO queue VALUES ({id}, {job})")).unwrap();
+    }
+    db.execute("DELETE FROM queue WHERE id <= 600").unwrap();
+    assert_eq!(estimate(&mut db, "queue"), (2489, 2400));
     // @end
 }
 
@@ -176,7 +185,7 @@ fn access_paths() {
         "Search flights with flights_carrier_day for \
          (carrier = 'WN') AND (day >= '2024-01-29'), about 4 rows"
     );
-    // A unique index promises one row.
+    // A unique index with every column fixed yields at most one row.
     assert_eq!(
         first("SELECT city FROM airports WHERE code = 'DHN'"),
         "Search airports with airports_code for (code = 'DHN'), about 1 rows"
@@ -317,6 +326,44 @@ fn filters_sink() {
         ]
     );
     // @end
+}
+
+#[test]
+fn errors_depend_on_where_a_condition_runs() {
+    // @listing pushdown-error-test
+    let (mut db, _) = fixture();
+    let sql = "SELECT f.id FROM flights f JOIN airports a ON a.code = f.dest
+               WHERE a.state = 'AK' AND 100 / f.delay < 0";
+    // Unplanned, the division is reached only by the one flight to Alaska,
+    // since AND skips its right side when the left is false.
+    db.set_planner(false);
+    assert_eq!(query(&mut db, sql), ["106704"]);
+    // Planned, the division sinks to the scan of flights and meets every one.
+    db.set_planner(true);
+    assert_eq!(
+        db.execute(sql).unwrap_err().to_string(),
+        "error at line 2, column 41: division by zero"
+    );
+    // @end
+}
+
+#[test]
+fn an_unqualified_column_keeps_its_table() {
+    // Written order binds `code` to carriers, the only table with that column
+    // when the first ON is read. Joined in another order, the name must not
+    // come to mean the airports' code.
+    let (mut db, _) = fixture();
+    let sql = |on: &str| {
+        format!(
+            "SELECT f.id FROM flights f JOIN carriers c ON {on} = f.carrier
+             JOIN airports a ON a.code = f.dest ORDER BY f.id"
+        )
+    };
+    let qualified = query(&mut db, &sql("c.code"));
+    assert_eq!(qualified.len(), 200);
+    assert_eq!(query(&mut db, &sql("code")), qualified);
+    db.set_planner(false);
+    assert_eq!(query(&mut db, &sql("code")), qualified);
 }
 
 #[test]
@@ -498,6 +545,9 @@ fn planned_against_unplanned() {
          JOIN airports a ON f.origin = a.code",
         "flights f JOIN airports a ON a.state = 'HI' AND f.miles > 2000.0",
         "airports a LEFT JOIN flights f ON f.origin = a.code",
+        // `code` is the carriers' column, whichever order the joins run in.
+        "flights f JOIN carriers c ON code = f.carrier
+         JOIN airports a ON a.code = f.dest",
     ];
     let conditions = [
         "f.origin = 'ATL'",

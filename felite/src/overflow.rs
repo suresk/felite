@@ -35,12 +35,23 @@ pub fn store(pager: &mut Pager, row: &[u8]) -> Result<Vec<u8>> {
     };
     // Written from the last page back, so that each page can name the one after.
     let mut next: PageNo = 0;
+    let mut written = Vec::new();
     for chunk in row[KEPT..].chunks(DATA_SIZE).rev() {
         let mut page = Page::new();
         page.bytes_mut()[0] = OVERFLOW;
         page.put_u32(NEXT_AT, next);
         page.bytes_mut()[DATA_AT..DATA_AT + chunk.len()].copy_from_slice(chunk);
-        next = pager.allocate(page)?;
+        next = match pager.allocate(page) {
+            Ok(n) => n,
+            Err(error) => {
+                // No stub will point at the pages written so far: free them.
+                for n in written {
+                    pager.free(n)?;
+                }
+                return Err(error);
+            }
+        };
+        written.push(next);
     }
     let mut stored = row[..KEPT].to_vec();
     stored.extend_from_slice(&length.to_be_bytes());
@@ -59,8 +70,8 @@ pub(crate) fn chain(
     let tail = &stored[KEPT..];
     let length = u32::from_be_bytes([tail[0], tail[1], tail[2], tail[3]]) as usize;
     let mut next = PageNo::from_be_bytes([tail[4], tail[5], tail[6], tail[7]]);
-    // A row this long has this many overflow pages. The file must be able to hold
-    // them, or the length is not to be believed.
+    // A row this long has this many overflow pages. A length that needs more
+    // pages than the file has is corrupt.
     let needed = length.saturating_sub(KEPT).div_ceil(DATA_SIZE);
     if length < SPILLED || needed > pager.page_count()? as usize {
         return Err(Error::Corrupt(format!("a spilled row of {length} bytes")));
@@ -108,7 +119,8 @@ pub fn release(pager: &mut Pager, stored: &[u8]) -> Result<()> {
     if stored.len() != SPILLED {
         return Ok(());
     }
-    for n in chain(pager, stored)?.1 {
+    let (_, pages) = chain(pager, stored)?;
+    for n in pages {
         pager.free(n)?;
     }
     Ok(())

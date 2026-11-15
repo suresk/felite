@@ -9,7 +9,7 @@ use crate::pager::Pager;
 use crate::slotted::{SLOT_SIZE, SLOTTED_HEADER};
 
 // @listing merge-below
-/// A page with fewer bytes in use than this is merged into a neighbor, if the two
+/// A page with fewer bytes in use than this is merged with a sibling, if the two
 /// fit in one page. It is a quarter of the usable space.
 const MERGE_BELOW: usize = (PAGE_SIZE - SLOTTED_HEADER) / 4;
 // @end
@@ -34,11 +34,11 @@ fn cells_of(page: &Page, first_key: Option<&[u8]>) -> Result<Vec<Vec<u8>>> {
 
 // @listing merge
 /// Child `i` of interior page `n` has just lost a cell. If it is now small, and it
-/// and a neighbor fit in one page, the two become one and the parent loses a cell.
+/// and its sibling fit in one page, the two become one and the parent loses a cell.
 fn merge_if_small(pager: &mut Pager, n: PageNo, i: usize) -> Result<()> {
     let parent = pager.page(n)?;
     if parent.cell_count() < 2 {
-        return Ok(()); // an only child has no neighbor to merge with
+        return Ok(()); // an only child has no sibling to merge with
     }
     // The pair to merge: the child and the page on its left, or on its right if
     // the child is the first.

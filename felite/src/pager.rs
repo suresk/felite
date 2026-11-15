@@ -21,7 +21,7 @@ const PAGE_COUNT_AT: usize = 20;
 const FREE_HEAD_AT: usize = 24;
 const FREE_COUNT_AT: usize = 28;
 
-/// The kind of a page that belongs to no tree and is waiting to be used again.
+/// The kind of a page that belongs to no tree and is on the free list.
 pub const FREE: u8 = 3;
 /// Where a free page keeps the number of the next free page.
 const NEXT_FREE_AT: usize = 4;
@@ -54,7 +54,7 @@ pub struct Pager {
 /// How many pages `Pager::open` will keep in memory: about 8 MB of them.
 pub const DEFAULT_FRAMES: usize = 2000;
 
-/// What the pager keeps in order to choose which page to drop.
+/// What the pager keeps in order to choose which page to evict.
 struct Pool {
     /// The most pages that may be in memory at once.
     capacity: usize,
@@ -72,7 +72,7 @@ pub struct PoolStats {
     pub reads: u64,
     /// Pages written to it, by `flush` or to make room.
     pub writes: u64,
-    /// Pages dropped from memory to make room.
+    /// Pages evicted from memory to make room.
     pub evictions: u64,
 }
 // @end
@@ -144,6 +144,10 @@ impl Pager {
             let what = format!("its pages are {page_size} bytes, not {PAGE_SIZE}");
             return Err(Error::Corrupt(what));
         }
+        if header.u32_at(PAGE_COUNT_AT) == 0 {
+            let what = "its page count is 0, but the header is a page itself";
+            return Err(Error::Corrupt(what.into()));
+        }
         Ok(())
     }
     // @end
@@ -208,25 +212,34 @@ impl Pager {
     // @end
 
     // @listing with-capacity
-    /// Opens a database with room in memory for `frames` pages, and no more.
+    /// Opens a database with room in memory for `frames` pages, and no more. A
+    /// budget of zero is raised to one.
     pub fn with_capacity(storage: Box<dyn Storage>, frames: usize) -> Result<Pager> {
         let mut pager = Pager::open(storage)?;
         pager.pool.capacity = frames.max(1);
         Ok(pager)
     }
 
+    /// What the pool has done with the file since the pager was opened.
     pub fn stats(&self) -> PoolStats {
         self.pool.stats
     }
     // @end
 
     // @listing admit
-    /// Called before page `n` is used. If the page is not in memory, this makes
-    /// sure there is room for it, dropping other pages if it has to.
+    /// Called before page `n` is used. On a hit it sets the page's bit; on a miss
+    /// it evicts pages until there is a free frame, and queues `n`.
     fn admit(&mut self, n: PageNo) -> Result<()> {
         if self.frames.contains_key(&n) {
             self.pool.recent.insert(n);
             return Ok(());
+        }
+        // The last miss queued its page before reading it. If that read failed,
+        // the page is at the back of the queue with no frame: take it off.
+        if let Some(last) = self.pool.clock.back()
+            && !self.frames.contains_key(last)
+        {
+            self.pool.clock.pop_back();
         }
         while self.frames.len() >= self.pool.capacity {
             let Some(victim) = self.pool.clock.pop_front() else { break };
@@ -244,7 +257,7 @@ impl Pager {
     // @end
 
     // @listing evict
-    /// Drops page `n` from memory, writing it to the file first if it has changed.
+    /// Evicts page `n`, writing it to the file first if it has changed.
     fn evict(&mut self, n: PageNo) -> Result<()> {
         // @hide
         if self.wal.is_some() {
@@ -279,8 +292,13 @@ impl Pager {
         }
         // @show
         let n = self.page_count()?;
+        let Some(count) = n.checked_add(1) else {
+            let full = format!("the file has {n} pages, the most a PageNo allows");
+            let kind = std::io::ErrorKind::StorageFull;
+            return Err(Error::Io(std::io::Error::new(kind, full)));
+        };
         let header = self.load(0)?;
-        header.page.put_u32(PAGE_COUNT_AT, n + 1);
+        header.page.put_u32(PAGE_COUNT_AT, count);
         header.dirty = true;
         // @hide
         self.admit(n)?;
@@ -301,8 +319,12 @@ impl Pager {
         let header = self.load(0)?;
         let head = header.page.u32_at(FREE_HEAD_AT);
         let count = header.page.u32_at(FREE_COUNT_AT);
+        let Some(count) = count.checked_add(1) else {
+            let what = format!("the header counts {count} free pages");
+            return Err(Error::Corrupt(what));
+        };
         header.page.put_u32(FREE_HEAD_AT, n);
-        header.page.put_u32(FREE_COUNT_AT, count + 1);
+        header.page.put_u32(FREE_COUNT_AT, count);
         header.dirty = true;
 
         let mut page = Page::new();
@@ -323,18 +345,19 @@ impl Pager {
         self.check_in_file(n)?;
         let frame = self.load(n)?;
         if frame.page.bytes()[0] != FREE {
-            return Err(Error::Corrupt(format!(
-                "page {n} is on the free list in use"
-            )));
+            let what = format!("page {n} is on the free list and is not free");
+            return Err(Error::Corrupt(what));
         }
         let next = frame.page.u32_at(NEXT_FREE_AT);
-        *frame = Frame { page, dirty: true };
-
         let header = self.load(0)?;
-        let count = header.page.u32_at(FREE_COUNT_AT);
+        let Some(count) = header.page.u32_at(FREE_COUNT_AT).checked_sub(1) else {
+            let what = format!("the free list holds page {n} but its count is 0");
+            return Err(Error::Corrupt(what));
+        };
         header.page.put_u32(FREE_HEAD_AT, next);
-        header.page.put_u32(FREE_COUNT_AT, count.saturating_sub(1));
+        header.page.put_u32(FREE_COUNT_AT, count);
         header.dirty = true;
+        *self.load(n)? = Frame { page, dirty: true };
         Ok(n)
     }
     // @end
@@ -349,7 +372,11 @@ impl Pager {
     // @listing check-free-list
     /// Walks the free list, checking each page on it, and returns its length.
     pub fn check_free_list(&mut self) -> Result<u32> {
-        let count = self.free_count()?;
+        let (count, pages) = (self.free_count()?, self.page_count()?);
+        if count >= pages {
+            let what = format!("{count} free pages in a file of {pages}");
+            return Err(Error::Corrupt(what));
+        }
         let mut next = self.load(0)?.page.u32_at(FREE_HEAD_AT);
         for _ in 0..count {
             let page = self.page(next)?;
@@ -382,8 +409,8 @@ impl Pager {
     // @end
 
     // @listing flush
-    /// Writes every changed page to the file, lowest page number first, and waits
-    /// for the disk.
+    /// Writes every dirty page to the file, lowest page number first, then syncs.
+    /// Not atomic: a crash partway through leaves some pages new and some old.
     pub fn flush(&mut self) -> Result<()> {
         // @hide
         if self.wal.is_some() {
@@ -430,8 +457,8 @@ impl Pager {
     }
 
     /// Changes how many pages the pager may keep in memory.
-    pub fn set_capacity(&mut self, frames: usize) {
-        self.pool.capacity = frames.max(1);
+    pub fn set_capacity(&mut self, pages: usize) {
+        self.pool.capacity = pages.max(1);
     }
 
     /// How many frames the log holds, or 0 if there is no log.
@@ -479,7 +506,9 @@ impl Pager {
         self.pool.stats.writes += pages as u64;
         Ok(pages)
     }
+    // @end
 
+    // @listing checkpoint-after
     /// Sets the number of frames at which a commit is followed by a checkpoint.
     pub fn checkpoint_after(&mut self, frames: u32) {
         self.checkpoint_after = frames;
@@ -510,7 +539,7 @@ impl Pager {
     /// Undoes every change since the last commit.
     pub fn rollback(&mut self) -> Result<()> {
         let Some(wal) = &mut self.wal else {
-            return Err(Error::Corrupt("a pager with no log cannot undo".into()));
+            return Err(Error::Sql("a pager with no log cannot undo".into()));
         };
         wal.rollback();
         // Every page in memory is suspect. Drop them all, and read again as needed.

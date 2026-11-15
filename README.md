@@ -79,12 +79,15 @@ holds the tools above. Each chapter has two test files in `felite/tests/`:
 ## Checking your own code
 
 If you are writing felite yourself as you read, the same command that checks a chapter here
-runs its tests against your crate. Clone this repository next to yours and give it the
-directory that holds your `Cargo.toml`:
+runs its tests against your code. Chapter 1 has you make a workspace, `felite-workspace`, with
+the crate in `felite-workspace/felite`. Clone this repository next to it under another name,
+so the two aren't confused, and point the command at your workspace:
 
 ```text
-$ cargo xtask check 7 --crate ../my-felite      # Chapter 7: its examples and every challenge
-$ cargo xtask check 7.2 --crate ../my-felite    # Challenge 7.2 alone, with the full output
+$ git clone https://github.com/suresk/felite felite-reference
+$ cd felite-reference
+$ cargo xtask check 7 --crate ../felite-workspace      # Chapter 7: its examples and every challenge
+$ cargo xtask check 7.2 --crate ../felite-workspace    # Challenge 7.2 alone, with the full output
 ```
 
 ```text
@@ -98,10 +101,11 @@ Chapter 7
 ```
 
 Each challenge is compiled on its own, so the ones you haven't written don't get in the way
-of the ones you have. Nothing is written into your crate: the tests are copied to
-`target/check` here and built against yours, along with the data files in `felite/fixtures`.
-Your package can have any name. Set the `FELITE_CRATE` environment variable to leave out
-`--crate`.
+of the ones you have. Nothing is written into your workspace: the tests are copied to
+`target/check` here and built against your crate, along with the data files in
+`felite/fixtures`. `--crate` takes either a workspace with the crate in `felite/`, or the
+crate's own directory, and your package can have any name. To leave `--crate` out, set it
+once: `export FELITE_CRATE=../felite-workspace`.
 
 Two things to know. The tests reach everything by its name at the root of the crate, such as
 `felite::delete_range`, so export each challenge's solution from your `lib.rs`. And they

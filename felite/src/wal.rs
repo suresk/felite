@@ -4,6 +4,7 @@ use crate::error::{Error, Result};
 use crate::page::{PAGE_SIZE, Page, PageNo};
 use crate::storage::Storage;
 use std::collections::HashMap;
+use std::io;
 
 // @listing wal-layout
 /// The first 8 bytes of every felite log.
@@ -19,7 +20,7 @@ pub const FRAME_SIZE: usize = FRAME_HEADER + PAGE_SIZE;
 
 /// Where frame `i` starts in the log file. The first frame is frame 0.
 fn frame_offset(i: u32) -> u64 {
-    LOG_HEADER as u64 + i as u64 * FRAME_SIZE as u64
+    LOG_HEADER as u64 + u64::from(i) * FRAME_SIZE as u64
 }
 // @end
 
@@ -37,6 +38,7 @@ pub fn checksum(mut sums: (u32, u32), bytes: &[u8]) -> (u32, u32) {
 // @end
 
 // @listing wal
+/// The log file, and the directory in memory of which frame holds each page.
 pub(crate) struct Wal {
     storage: Box<dyn Storage>,
     /// A number that is different each time the log is started over.
@@ -49,6 +51,8 @@ pub(crate) struct Wal {
     committed: HashMap<PageNo, u32>,
     /// The same, for the frames written since the last commit.
     pending: HashMap<PageNo, u32>,
+    /// Set when a sync of the log fails. From then on nothing more is written.
+    poisoned: bool,
     // @hide
     /// The values of `frames` and `sums` as they were after the last commit.
     committed_end: (u32, (u32, u32)),
@@ -67,6 +71,7 @@ impl Wal {
             frames: 0,
             committed: HashMap::new(),
             pending: HashMap::new(),
+            poisoned: false,
             // @hide
             committed_end: (0, (0, 0)),
             // @show
@@ -91,7 +96,7 @@ impl Wal {
         header.extend(sums.0.to_be_bytes());
         header.extend(sums.1.to_be_bytes());
         self.storage.write_at(0, &header)?;
-        self.storage.sync()?;
+        self.sync()?;
         self.sums = sums;
         // @hide
         self.committed_end = (0, sums);
@@ -110,9 +115,10 @@ impl Wal {
         page: &Page,
         commit: bool,
     ) -> Result<()> {
+        self.usable()?;
         let mut frame = Vec::with_capacity(FRAME_SIZE);
         frame.extend(n.to_be_bytes());
-        frame.extend((commit as u32).to_be_bytes());
+        frame.extend(u32::from(commit).to_be_bytes());
         let sums = checksum(checksum(self.sums, &frame), page.bytes());
         frame.extend(sums.0.to_be_bytes());
         frame.extend(sums.1.to_be_bytes());
@@ -123,13 +129,47 @@ impl Wal {
         self.pending.insert(n, self.frames);
         self.frames += 1;
         if commit {
-            self.storage.sync()?;
+            self.sync()?;
             self.committed.extend(self.pending.drain());
             // @hide
             self.committed_end = (self.frames, self.sums);
             // @show
         }
         Ok(())
+    }
+    // @end
+
+    // @listing wal-sync
+    /// Syncs the log. A sync that fails poisons the log: the kernel may have
+    /// dropped the pages it could not write, so a second sync could succeed
+    /// without them, and nothing more is written through this `Wal`.
+    fn sync(&mut self) -> Result<()> {
+        self.usable()?;
+        if let Err(e) = self.storage.sync() {
+            self.poisoned = true;
+            return Err(e.into());
+        }
+        Ok(())
+    }
+
+    /// Fails if an earlier sync of the log failed.
+    fn usable(&self) -> Result<()> {
+        if self.poisoned {
+            let what =
+                "an earlier sync of the log failed; the database must be reopened";
+            return Err(io::Error::other(what).into());
+        }
+        Ok(())
+    }
+
+    /// Whether any frame has been written since the last commit.
+    pub(crate) fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// How many frames the log holds.
+    pub(crate) fn frames(&self) -> u32 {
+        self.frames
     }
     // @end
 
@@ -143,16 +183,6 @@ impl Wal {
         let at = frame_offset(frame) + FRAME_HEADER as u64;
         self.storage.read_at(at, page.bytes_mut())?;
         Ok(Some(page))
-    }
-
-    /// Whether any frame has been written since the last commit.
-    pub(crate) fn has_pending(&self) -> bool {
-        !self.pending.is_empty()
-    }
-
-    /// How many frames the log holds.
-    pub(crate) fn frames(&self) -> u32 {
-        self.frames
     }
     // @end
 
@@ -218,6 +248,9 @@ impl Wal {
         if !self.pending.is_empty() || self.committed.is_empty() {
             return Ok(0);
         }
+        // Recovery may have accepted frames that were never synced. They must be
+        // safe in the log before the database file comes to depend on them.
+        self.sync()?;
         let mut newest: Vec<(PageNo, u32)> =
             self.committed.iter().map(|(n, frame)| (*n, *frame)).collect();
         newest.sort();

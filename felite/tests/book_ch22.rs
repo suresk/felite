@@ -84,6 +84,28 @@ fn parsing_joins() {
         message("SELECT id FROM flights LEFT carriers ON carrier = code"),
         "expected `JOIN`, found the name `carriers`"
     );
+    // LEFT OUTER JOIN is the standard's full spelling of LEFT JOIN.
+    let outer = "SELECT id FROM flights LEFT OUTER JOIN carriers ON carrier = code";
+    assert_eq!(
+        parse(outer).unwrap().to_string(),
+        "SELECT id FROM flights LEFT JOIN carriers ON (carrier = code)"
+    );
+    // Other databases' joins are errors, and not aliases of `flights`.
+    for join in ["RIGHT", "FULL", "CROSS", "NATURAL"] {
+        let sql =
+            format!("SELECT id FROM flights {join} JOIN carriers ON carrier = code");
+        assert_eq!(
+            message(&sql),
+            format!("felite has only JOIN and LEFT JOIN, and no {join} JOIN")
+        );
+    }
+    assert_eq!(
+        parse("SELECT id FROM flights right JOIN carriers ON carrier = code")
+            .unwrap_err()
+            .to_string(),
+        "syntax error at line 1, column 24: \
+         felite has only JOIN and LEFT JOIN, and no RIGHT JOIN"
+    );
     // @end
 }
 

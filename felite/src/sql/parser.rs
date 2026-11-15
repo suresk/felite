@@ -199,7 +199,6 @@ impl Parser {
     }
     // @end
 
-    // @listing parse-delete-update
     // @listing one-word
     /// A statement that is a single keyword: steps past it.
     fn word(&mut self, statement: Statement) -> Statement {
@@ -208,6 +207,7 @@ impl Parser {
     }
     // @end
 
+    // @listing parse-delete-update
     fn delete(&mut self) -> Result<Delete> {
         self.expect_keyword(Keyword::Delete)?;
         self.expect_keyword(Keyword::From)?;
@@ -355,18 +355,39 @@ impl Parser {
     // @listing parse-joins
     /// `[[AS] name]`, after the name of a table.
     fn alias(&mut self) -> Result<Option<String>> {
-        if self.eat_keyword(Keyword::As) || matches!(self.peek(), Token::Ident(_)) {
-            return Ok(Some(self.name("a name for the table")?));
+        let named = self.eat_keyword(Keyword::As);
+        if let Token::Ident(word) = self.peek() {
+            // Words that other databases use for joins that felite doesn't have.
+            // They are not keywords, so they would otherwise be taken for an alias.
+            let joins = ["cross", "full", "natural", "outer", "right"];
+            if joins.iter().any(|join| word.eq_ignore_ascii_case(join)) {
+                let join = word.to_uppercase();
+                let message =
+                    format!("felite has only JOIN and LEFT JOIN, and no {join} JOIN");
+                return Err(Error::Syntax(message, self.span()));
+            }
+        } else if !named {
+            return Ok(None);
         }
-        Ok(None)
+        Ok(Some(self.name("a name for the table")?))
     }
 
-    /// `{[INNER | LEFT] JOIN table [[AS] name] ON expr}`
+    /// Moves past OUTER, which may follow LEFT and changes nothing.
+    fn eat_outer(&mut self) {
+        if matches!(self.peek(), Token::Ident(w) if w.eq_ignore_ascii_case("outer")) {
+            self.advance();
+        }
+    }
+
+    /// `{[INNER | LEFT [OUTER]] JOIN table [[AS] name] ON expr}`
     fn joins(&mut self) -> Result<Vec<Join>> {
         let mut joins = Vec::new();
         loop {
             let left = self.eat_keyword(Keyword::Left);
             let inner = !left && self.eat_keyword(Keyword::Inner);
+            if left {
+                self.eat_outer();
+            }
             if left || inner {
                 self.expect_keyword(Keyword::Join)?;
             } else if !self.eat_keyword(Keyword::Join) {
@@ -443,13 +464,16 @@ impl Parser {
         if !self.eat_keyword(keyword) {
             return Ok(None);
         }
-        match *self.peek() {
-            Token::Integer(count) if count >= 0 => {
-                self.advance();
-                Ok(Some(count as usize))
-            }
-            _ => self.expected("a count"),
-        }
+        // A count too large for a `usize` is an error, where `as` would wrap it.
+        let count = match *self.peek() {
+            Token::Integer(count) => usize::try_from(count).ok(),
+            _ => None,
+        };
+        let Some(count) = count else {
+            return self.expected("a count");
+        };
+        self.advance();
+        Ok(Some(count))
     }
     // @end
 }
@@ -504,6 +528,7 @@ impl Parser {
         loop {
             let span = left.span;
             if *self.peek() == Token::Keyword(Keyword::Is) && IS_POWER > floor {
+                self.deeper()?;
                 self.advance();
                 let negated = self.eat_keyword(Keyword::Not);
                 self.expect_keyword(Keyword::Null)?;

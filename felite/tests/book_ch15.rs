@@ -101,8 +101,8 @@ fn the_halloween_problem() {
     // @listing halloween
     let mut db = flights();
     let tree = db.table("flights").unwrap().tree;
-    // The tempting way to do UPDATE flights SET id = id + 10000: walk the table,
-    // moving each row to its new id as it is found.
+    // UPDATE flights SET id = id + 10000 in one pass: walk the table, moving each
+    // row to its new id as it is found.
     let mut cursor = Cursor::first(&tree, db.pager()).unwrap();
     let mut moves = 0;
     while let Some((key, stored)) = cursor.next(db.pager()).unwrap() {
@@ -178,7 +178,7 @@ fn updates_that_swap() {
 fn every_row_once() {
     // @listing once
     let mut db = flights();
-    // The statement that never finished when it was done the tempting way.
+    // The statement that Section 15.3 mangled, done in two phases.
     assert_eq!(changed(&mut db, "UPDATE flights SET id = id + 10000"), 5);
     assert_eq!(
         query(&mut db, "SELECT id, carrier FROM flights"),
@@ -266,7 +266,7 @@ fn a_row_that_grows() {
     assert_eq!(query(&mut db, "SELECT origin FROM flights WHERE id = 89"), [essay]);
     assert_eq!(db.pager().page_count().unwrap(), pages + 1);
 
-    // Shrinking it gives the page back.
+    // Shrinking it returns the overflow page to the free list.
     changed(&mut db, "UPDATE flights SET origin = 'DEN' WHERE id = 89");
     assert_eq!(db.pager().free_count().unwrap(), 1);
     assert_eq!(
@@ -315,12 +315,16 @@ fn statements_against_a_model() {
                     &mut db,
                     &format!("UPDATE t SET n = n + {a} WHERE n < {b}"),
                 );
-                let hit = model.values_mut().filter(|n| **n < b);
-                assert_eq!(count, hit.map(|n| *n += a).count());
+                let mut hit = 0;
+                for n in model.values_mut().filter(|n| **n < b) {
+                    *n += a;
+                    hit += 1;
+                }
+                assert_eq!(count, hit);
             }
             _ => {
                 // Move every row in a range of ids up by a thousand, which is
-                // refused if one of them would land on a row that is staying put.
+                // an error if one of them would land on a row that is staying put.
                 let sql = format!(
                     "UPDATE t SET id = id + 1000 WHERE id >= {a} AND id < {a} + {b}"
                 );

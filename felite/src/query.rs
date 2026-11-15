@@ -1,14 +1,15 @@
 //! SELECT: from a statement to a chain of operators, and from that to rows.
 
 use crate::aggregate::is_grouped;
-use crate::bind::{Bound, BoundKind, Scope, bind, bind_condition};
+use crate::bind::{Bound, BoundKind, Scope, ScopeColumn, bind, bind_condition};
 use crate::catalog::fold;
 use crate::db::{Database, Output};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::exec::{Filter, Limit, Operator, Project, Row, Scan};
 use crate::record::Value;
 use crate::sort::{Sort, SortKey};
 use crate::sql::{Expr, ExprKind, OrderKey, Select, SelectItem, Span};
+use std::borrow::Cow;
 
 // @listing result-set
 /// The rows a query produced, and a name for each of their columns.
@@ -59,16 +60,6 @@ pub(crate) fn select_list(
 /// The expression that a key of an ORDER BY stands for. A key that is the name
 /// given to something in the SELECT list means that expression.
 pub(crate) fn key_expr<'a>(select: &'a Select, key: &'a OrderKey) -> &'a Expr {
-    // @hide
-    // A key that is a whole number is the position of a result column.
-    if let ExprKind::Literal(Value::Integer(position)) = key.expr.kind {
-        let item =
-            usize::try_from(position - 1).ok().and_then(|at| select.items.get(at));
-        if let Some(SelectItem::Expr { expr, .. }) = item {
-            return expr;
-        }
-    }
-    // @show
     let ExprKind::Column { table: None, name } = &key.expr.kind else {
         return &key.expr;
     };
@@ -95,9 +86,54 @@ pub(crate) fn order_keys(select: &Select, scope: &Scope) -> Result<Vec<SortKey>>
 // @end
 
 impl Database {
+    // @listing order-position
+    /// A copy of a SELECT in which each ORDER BY key that is a whole number has
+    /// been replaced by the result column at that position, counting from 1. A
+    /// star in the SELECT list stands for every column in scope.
+    pub(crate) fn order_positions<'a>(
+        &self,
+        select: &'a Select,
+    ) -> Result<Cow<'a, Select>> {
+        let position = |key: &OrderKey| match key.expr.kind {
+            ExprKind::Literal(Value::Integer(n)) => Some(n),
+            _ => None,
+        };
+        if select.order_by.iter().all(|key| position(key).is_none()) {
+            return Ok(Cow::Borrowed(select));
+        }
+        // What each column of the result is, in order.
+        let mut columns = Vec::new();
+        for item in &select.items {
+            match item {
+                SelectItem::Expr { expr, .. } => columns.push(expr.kind.clone()),
+                SelectItem::Star => {
+                    for column in self.scope_of(select)?.columns {
+                        let ScopeColumn { table, name, .. } = column;
+                        columns.push(ExprKind::Column { table: Some(table), name });
+                    }
+                }
+            }
+        }
+        let mut select = select.clone();
+        for key in &mut select.order_by {
+            let Some(n) = position(key) else { continue };
+            let span = key.expr.span;
+            let at = usize::try_from(n).ok().and_then(|n| n.checked_sub(1));
+            let Some(kind) = at.and_then(|at| columns.get(at)) else {
+                let message = format!("the result has no column {n} to order by");
+                return Err(Error::Invalid(message, span));
+            };
+            key.expr = Expr { kind: kind.clone(), span };
+        }
+        Ok(Cow::Owned(select))
+    }
+    // @end
+
     // @listing select
     pub(crate) fn select(&mut self, select: &Select) -> Result<Output> {
         // @hide
+        let resolved = self.order_positions(select)?;
+        let select = &*resolved;
         if self.planner {
             return self.select_planned(select);
         }

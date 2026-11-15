@@ -2,6 +2,7 @@
 //! that some other database produced for them.
 
 use crate::db::{Database, Output};
+use crate::error::Error;
 use crate::record::Value;
 use std::collections::BTreeMap;
 
@@ -86,7 +87,7 @@ impl SltReport {
 }
 // @end
 
-// @listing slt-format
+// @listing slt-show
 /// One value of a result, as sqllogictest writes it for a column of a given
 /// type: `I` for an integer, `R` for a real, `T` for text.
 fn show(value: &Value, column: char) -> String {
@@ -100,7 +101,9 @@ fn show(value: &Value, column: char) -> String {
         (value, _) => value.to_string(),
     }
 }
+// @end
 
+// @listing slt-lines
 /// A query's rows as the lines the script should have: one value to a line,
 /// sorted as the script asks, and replaced by a count and a hash if there are
 /// more than `threshold` of them.
@@ -166,6 +169,8 @@ pub fn run_slt(db: &mut Database, script: &str) -> SltReport {
     for record in script.replace("\r\n", "\n").split("\n\n") {
         let lines: Vec<&str> =
             record.lines().filter(|line| !line.starts_with('#')).collect();
+        // A record may start with lines such as `skipif mysql` and `onlyif
+        // oracle`. Those marked for one other database are passed over.
         let Some(first) = lines.iter().position(|line| !line.contains("if ")) else {
             continue;
         };
@@ -178,48 +183,63 @@ pub fn run_slt(db: &mut Database, script: &str) -> SltReport {
         match words.as_slice() {
             ["hash-threshold", n] => threshold = n.parse().unwrap_or(0),
             ["halt"] => break,
-            ["statement", expected] => {
-                let outcome = db.execute(&body.join("\n"));
-                match outcome.is_ok() == (*expected == "ok") {
-                    true => report.statements_ok += 1,
-                    false => report.statements_wrong += 1,
-                }
-                if let (Err(error), "ok") = (outcome, *expected) {
-                    *report
-                        .refusals
-                        .entry(reason(&error.to_string()))
-                        .or_default() += 1;
-                }
-            }
+            ["statement", expected] => report.statement(db, body, *expected == "ok"),
             ["query", types, rest @ ..] => {
-                let split = body
-                    .iter()
-                    .position(|line| *line == "----")
-                    .unwrap_or(body.len());
-                let expected: Vec<&str> =
-                    body.iter().skip(split + 1).copied().collect();
                 let sort = rest.first().copied().unwrap_or("nosort");
-                match db.execute(&body[..split].join("\n")) {
-                    Ok(Output::Rows(result)) => {
-                        let got = result_lines(&result.rows, types, sort, threshold);
-                        match got == expected {
-                            true => report.queries_ok += 1,
-                            false => report.queries_wrong += 1,
-                        }
-                    }
-                    Ok(_) => report.queries_wrong += 1,
-                    Err(error) => {
-                        report.queries_refused += 1;
-                        *report
-                            .refusals
-                            .entry(reason(&error.to_string()))
-                            .or_default() += 1;
-                    }
-                }
+                report.query(db, body, types, sort, threshold);
             }
             _ => {}
         }
     }
     report
+}
+// @end
+
+// @listing slt-record
+impl SltReport {
+    /// A `statement ok` or `statement error` record: SQL that should succeed,
+    /// or should fail.
+    fn statement(&mut self, db: &mut Database, body: &[&str], ok: bool) {
+        let outcome = db.execute(&body.join("\n"));
+        match outcome.is_ok() == ok {
+            true => self.statements_ok += 1,
+            false => self.statements_wrong += 1,
+        }
+        if let (Err(error), true) = (outcome, ok) {
+            self.refused(&error);
+        }
+    }
+
+    /// A `query` record: SQL, a line `----`, and the values it should return.
+    fn query(
+        &mut self,
+        db: &mut Database,
+        body: &[&str],
+        types: &str,
+        sort: &str,
+        threshold: usize,
+    ) {
+        let split =
+            body.iter().position(|line| *line == "----").unwrap_or(body.len());
+        let expected = body.get(split + 1..).unwrap_or(&[]);
+        match db.execute(&body[..split].join("\n")) {
+            Ok(Output::Rows(result)) => {
+                match result_lines(&result.rows, types, sort, threshold) == expected {
+                    true => self.queries_ok += 1,
+                    false => self.queries_wrong += 1,
+                }
+            }
+            Ok(_) => self.queries_wrong += 1,
+            Err(error) => {
+                self.queries_refused += 1;
+                self.refused(&error);
+            }
+        }
+    }
+
+    /// Counts a refusal under its reason.
+    fn refused(&mut self, error: &Error) {
+        *self.refusals.entry(reason(&error.to_string())).or_default() += 1;
+    }
 }
 // @end

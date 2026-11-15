@@ -1,6 +1,7 @@
 //! The examples in Chapter 8: `cargo test --test book_ch08`.
-use felite::{Cursor, Error, MemFile, OVERFLOW, Pager, SPILLED, Tree};
-use felite::{load, release, row_key, store};
+use felite::{Cursor, Error, MemFile, Pager, Tree, row_key};
+use felite::{FREE, Page};
+use felite::{OVERFLOW, SPILLED, load, release, store};
 use std::collections::BTreeMap;
 
 /// A new database in memory with one empty tree in it.
@@ -43,7 +44,6 @@ fn short_rows_are_stored_as_they_are() {
     let stored = store(&mut pager, &row).unwrap();
     assert_eq!(stored, row);
     assert_eq!(pager.page_count().unwrap(), 1); // no page was allocated
-    assert_eq!(load(&mut pager, stored).unwrap(), row);
 
     // The longest row that stays whole is one byte short of the spilled form.
     assert_eq!(SPILLED, 991);
@@ -68,19 +68,13 @@ fn a_long_row_spills() {
     // The other 9,017 bytes need three overflow pages of 4,088 bytes. They were
     // written last page first, so the chain runs 3, 2, 1.
     assert_eq!(pager.page_count().unwrap(), 4);
-    let links: Vec<(u8, u32)> = [3, 2, 1]
-        .map(|n| {
-            let page = pager.page(n).unwrap();
-            (page.kind(), page.u32_at(4))
-        })
-        .to_vec();
+    let links = [3, 2, 1].map(|n| {
+        let page = pager.page(n).unwrap();
+        (page.kind(), page.u32_at(4))
+    });
     assert_eq!(links, [(OVERFLOW, 2), (OVERFLOW, 1), (OVERFLOW, 0)]);
     // Page 3 carries on exactly where the tree's part stopped.
     assert_eq!(pager.page(3).unwrap().bytes()[8..12], row[983..987]);
-
-    assert_eq!(load(&mut pager, stored.clone()).unwrap(), row);
-    release(&mut pager, &stored).unwrap();
-    assert_eq!(pager.free_count().unwrap(), 3);
     // @end
 }
 
@@ -92,13 +86,47 @@ fn the_edge_between_short_and_long() {
     let mut cases = Vec::new();
     for length in [990, 991, 5071, 5072] {
         let before = pager.page_count().unwrap();
-        let row = text(length, length);
-        let stored = store(&mut pager, &row).unwrap();
+        let stored = store(&mut pager, &text(length, length)).unwrap();
         cases.push((length, stored.len(), pager.page_count().unwrap() - before));
-        assert_eq!(load(&mut pager, stored).unwrap(), row);
     }
     assert_eq!(cases, [(990, 990, 0), (991, 991, 1), (5071, 991, 1), (5072, 991, 2)]);
     // @end
+}
+
+#[test]
+fn rows_come_back_whole() {
+    // @listing read-back
+    let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
+    for length in [0, 100, 990, 991, 5071, 5072, 10_000] {
+        let row = text(length, length);
+        let stored = store(&mut pager, &row).unwrap();
+        assert_eq!(load(&mut pager, stored.clone()).unwrap(), row);
+        release(&mut pager, &stored).unwrap();
+    }
+    // Each chain went back to the free list and the next one reused it, so the
+    // file never grew past the longest chain: three pages for 10,000 bytes.
+    assert_eq!((pager.page_count().unwrap(), pager.free_count().unwrap()), (4, 3));
+    // @end
+}
+
+#[test]
+fn a_failed_store_frees_what_it_wrote() {
+    // A free list of pages 1 and 2, with page 2 damaged so that reusing it fails.
+    let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
+    for _ in 0..2 {
+        pager.allocate(Page::new()).unwrap();
+    }
+    pager.free(2).unwrap();
+    pager.free(1).unwrap();
+    pager.page_mut(2).unwrap().bytes_mut()[0] = 1;
+
+    // A 10,000-byte row needs three pages. The first comes from page 1, the second
+    // fails, and page 1 must not be left belonging to nothing.
+    let error = store(&mut pager, &text(10_000, 0)).unwrap_err();
+    assert!(matches!(error, Error::Corrupt(_)));
+    assert_eq!(pager.page_count().unwrap(), 3);
+    assert_eq!(pager.free_count().unwrap(), 2);
+    assert_eq!(pager.page(1).unwrap().kind(), FREE);
 }
 
 #[test]

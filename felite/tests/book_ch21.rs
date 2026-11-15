@@ -330,7 +330,23 @@ fn what_matches_a_group() {
         all("SELECT MAX(delay) - MIN(delay), MAX(delay) FROM flights"),
         "361 315"
     );
+    // A grouped column is found by what it names, not by how it is written.
+    for sql in [
+        "SELECT flights.carrier, COUNT(*) FROM flights GROUP BY carrier",
+        "SELECT carrier, COUNT(*) FROM flights GROUP BY flights.carrier",
+        "SELECT f.carrier, COUNT(*) FROM flights f GROUP BY carrier",
+    ] {
+        assert_eq!(all(&format!("{sql} HAVING COUNT(*) > 27")), "AA 28, WN 43");
+    }
     // @end
+    assert_eq!(
+        error(&mut db, "SELECT flights.carrier FROM flights f GROUP BY carrier"),
+        "error at line 1, column 8: there is no column flights.carrier"
+    );
+    assert_eq!(
+        error(&mut db, "SELECT nowhere.carrier FROM flights GROUP BY carrier"),
+        "error at line 1, column 8: there is no column nowhere.carrier"
+    );
     // `miles` by itself is not the key, though the key is made from it.
     assert!(
         db.execute("SELECT miles, COUNT(*) FROM flights GROUP BY miles > 2000.0")

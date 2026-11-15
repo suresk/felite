@@ -135,7 +135,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    /// Takes characters for as long as `wanted` says yes, and returns them.
+    /// Takes characters for as long as `wanted` returns true, and returns them.
     fn take_while(&mut self, wanted: impl Fn(char) -> bool) -> &'a str {
         let start = self.rest;
         while self.peek().is_some_and(&wanted) {
@@ -177,7 +177,7 @@ impl Scanner<'_> {
     // @end
 
     // @listing exponent
-    /// Takes an exponent such as `e3` or `E-3`, if one comes next, and says
+    /// Takes an exponent such as `e3` or `E-3`, if one comes next, and returns
     /// whether it did. An `e` with no digits after it is left where it is.
     fn exponent(&mut self) -> bool {
         let mut ahead = self.rest.chars();
@@ -192,7 +192,8 @@ impl Scanner<'_> {
         if !next.is_some_and(|c| c.is_ascii_digit()) {
             return false;
         }
-        for _ in 0..1 + signed as usize {
+        self.bump();
+        if signed {
             self.bump();
         }
         self.take_while(|c| c.is_ascii_digit());
@@ -216,9 +217,10 @@ impl Scanner<'_> {
         }
         let text = &text[..text.len() - self.rest.len()];
         if fraction || exponent {
-            match text.parse() {
-                Ok(value) => Ok(Token::Real(value)),
-                Err(_) => syntax(start, format!("{text} is not a number")),
+            // Every text that gets here is valid; one too large parses as infinity.
+            match text.parse::<f64>() {
+                Ok(value) if value.is_finite() => Ok(Token::Real(value)),
+                _ => syntax(start, format!("{text} is too large for a real")),
             }
         } else {
             match text.parse() {

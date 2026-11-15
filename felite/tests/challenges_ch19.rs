@@ -113,6 +113,15 @@ fn a_transaction_around_a_closure() {
     assert_eq!(failed.unwrap_err().to_string(), "on second thought, no");
     assert_eq!(db.transaction(), Transaction::Closed);
     assert_eq!(numbers(&mut db, "SELECT id FROM t"), [1, 2]);
+
+    // The closure carries on past a failed statement and returns `Ok`. COMMIT is
+    // refused, and the transaction is ended all the same.
+    let ignored = atomically(&mut db, |db| {
+        let _ = db.execute("INSERT INTO t VALUES (1, 99)");
+        Ok(())
+    });
+    assert!(ignored.is_err());
+    assert_eq!(db.transaction(), Transaction::Closed);
 }
 
 // @challenge 4
@@ -153,6 +162,16 @@ fn inserting_in_batches() {
         syncs.push(disk.syncs() - before);
         assert_eq!(numbers(&mut db, "SELECT n FROM t").len(), 1000);
     }
-    // The first figure includes one checkpoint, which is two syncs.
-    assert_eq!(syncs, [1002, 100, 10, 1]);
+    // The first figure includes one checkpoint, which is three syncs.
+    assert_eq!(syncs, [1003, 100, 10, 1]);
+    // A batch of zero rows is taken as a batch of one.
+    let mut db = logged();
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER)").unwrap();
+    insert_in_batches(&mut db, 3, 0).unwrap();
+    assert_eq!(numbers(&mut db, "SELECT n FROM t"), [0, 1, 2]);
+    // A failed insert ends its transaction before the error is returned.
+    let mut db = logged();
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, m INTEGER)").unwrap();
+    assert!(insert_in_batches(&mut db, 3, 2).is_err());
+    assert_eq!(db.transaction(), Transaction::Closed);
 }

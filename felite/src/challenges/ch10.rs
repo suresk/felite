@@ -75,7 +75,11 @@ pub fn strip_block_comments(source: &str) -> Result<String> {
 /// digits fill all 64 bits, so `0xFFFFFFFFFFFFFFFF` is -1.
 pub fn hex_literal(text: &str) -> Option<i64> {
     let digits = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X"))?;
-    if digits.is_empty() || digits.len() > 16 {
+    // from_str_radix would also accept a leading `+`, so check the digits first.
+    if digits.is_empty()
+        || digits.len() > 16
+        || !digits.bytes().all(|b| b.is_ascii_hexdigit())
+    {
         return None;
     }
     u64::from_str_radix(digits, 16).ok().map(|bits| bits as i64)

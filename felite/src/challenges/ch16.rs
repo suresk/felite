@@ -65,7 +65,7 @@ pub fn free_list_damage(statements: &[&str]) -> Result<Option<u64>> {
 // @end
 
 // @listing sync-each
-/// A storage that waits for the disk after every write.
+/// A storage that syncs after every write.
 pub struct SyncEach<S>(pub S);
 
 impl<S: Storage> Storage for SyncEach<S> {

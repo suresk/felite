@@ -46,7 +46,7 @@ fn arithmetic(
             Add => a.checked_add(*b),
             Subtract => a.checked_sub(*b),
             Multiply => a.checked_mul(*b),
-            _ if *b == 0 => return fail(span, "division by zero"),
+            Divide | Remainder if *b == 0 => return fail(span, "division by zero"),
             Divide => a.checked_div(*b),
             _ => a.checked_rem(*b),
         };
@@ -60,7 +60,7 @@ fn arithmetic(
         Add => a + b,
         Subtract => a - b,
         Multiply => a * b,
-        _ if b == 0.0 => return fail(span, "division by zero"),
+        Divide | Remainder if b == 0.0 => return fail(span, "division by zero"),
         Divide => a / b,
         _ => a % b,
     };
@@ -86,7 +86,11 @@ fn compare(left: &Value, right: &Value) -> Ordering {
     match (left, right) {
         (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
         (Value::Text(a), Value::Text(b)) => a.cmp(b),
-        _ => as_real(left).total_cmp(&as_real(right)),
+        _ => {
+            let (a, b) = (as_real(left), as_real(right));
+            // `==` makes -0.0 equal to 0.0, which `total_cmp` alone does not.
+            if a == b { Ordering::Equal } else { a.total_cmp(&b) }
+        }
     }
 }
 
@@ -104,7 +108,8 @@ fn comparison(op: BinaryOp, order: Ordering) -> bool {
 
 // @listing order
 /// How two values sort. NULL comes before everything else, and two NULLs are
-/// equal. The values must be of one type, apart from that.
+/// equal. Apart from that, both must be numbers (an INTEGER and a REAL compare by
+/// value) or both text.
 pub fn order(left: &Value, right: &Value) -> Ordering {
     match (left, right) {
         (Value::Null, Value::Null) => Ordering::Equal,

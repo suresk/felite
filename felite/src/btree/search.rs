@@ -46,12 +46,13 @@ pub(crate) fn child_for(page: &Page, key: &[u8]) -> Result<usize> {
 // @end
 
 // @listing tree
-/// The deepest tree we will follow. A healthy tree in a file of 2^32 pages cannot
-/// be this deep, so reaching the limit means the pages point in a circle.
+/// The deepest tree we will follow. With even two children to an interior page,
+/// 40 levels would take 2^39 leaves, more pages than a 32-bit number can count,
+/// so reaching the limit means the pages point in a circle.
 pub(crate) const MAX_DEPTH: usize = 40;
 
 /// A B+tree, known by the page number of its root.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tree {
     root: PageNo,
 }
@@ -64,6 +65,7 @@ impl Tree {
         Tree { root }
     }
 
+    /// The page number of the root, which stays the same as the tree grows.
     pub fn root(&self) -> PageNo {
         self.root
     }

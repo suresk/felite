@@ -74,11 +74,11 @@ fn keys_that_sort_as_bytes() {
     let hex = |values: &[Value]| hex(&encode_key(values));
     let text = |s: &str| Value::Text(s.to_string());
     assert_eq!(hex(&[Value::Null]), "00");
-    // An integer is a tag and eight bytes, with the top bit turned over.
+    // An integer is a tag and eight bytes, with the sign bit flipped.
     assert_eq!(hex(&[Value::Integer(5)]), "01 80 00 00 00 00 00 00 05");
     assert_eq!(hex(&[Value::Integer(-1)]), "01 7f ff ff ff ff ff ff ff");
     assert_eq!(hex(&[Value::Integer(i64::MIN)]), "01 00 00 00 00 00 00 00 00");
-    // A real likewise, and a negative one has every bit turned over.
+    // A real likewise, and a negative one has every bit inverted.
     assert_eq!(hex(&[Value::Real(1.5)]), "02 bf f8 00 00 00 00 00 00");
     assert_eq!(hex(&[Value::Real(-1.5)]), "02 40 07 ff ff ff ff ff ff");
     // Text is its bytes and two zeros.
@@ -121,12 +121,13 @@ fn keys_sort_as_values_do() {
     // @end
 
     // @listing keys-order-check
-    // `order` compares values of one kind, so compare each kind with itself.
+    // The bytes agree with `order` for two values of one kind, and for NULL
+    // against anything. An integer and a real are not compared: every integer
+    // key sorts before every real key, where `order` compares them as numbers.
     let kind = |v: &Value| encode_key(std::slice::from_ref(v))[0];
+    let null = |v: &Value| matches!(v, Value::Null);
     for a in &values {
-        for b in
-            values.iter().filter(|b| kind(a) == kind(b) || kind(a) * kind(b) == 0)
-        {
+        for b in values.iter().filter(|b| kind(a) == kind(b) || null(a) || null(b)) {
             let keys = encode_key(std::slice::from_ref(a))
                 .cmp(&encode_key(std::slice::from_ref(b)));
             assert_eq!(keys, order(a, b), "{a} and {b}");
@@ -233,6 +234,24 @@ fn creating_an_index() {
     // A statement that was refused leaves no pages behind.
     assert_eq!(file.bytes().len() / 4096, 13);
     assert_eq!(db.pager().free_count().unwrap(), 0);
+    // @end
+}
+
+#[test]
+fn index_keys_have_a_size_limit() {
+    // @listing key-limit-test
+    let (mut db, _) = fixture();
+    db.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)").unwrap();
+    db.execute("CREATE INDEX notes_body ON notes (body)").unwrap();
+    let insert = |length: usize| {
+        format!("INSERT INTO notes VALUES (1, '{}')", "x".repeat(length))
+    };
+    // A row may overflow onto pages of its own; an index key may not. The key
+    // is the text with its tag and ending, then the row id, 11 bytes more.
+    assert_eq!(error(&mut db, &insert(988)), "an entry of 1001 bytes is too large");
+    assert_eq!(query(&mut db, "SELECT count(*) FROM notes"), ["0"]);
+    db.execute(&insert(987)).unwrap();
+    db.check().unwrap();
     // @end
 }
 
@@ -422,8 +441,8 @@ fn what_an_index_saves() {
     // @listing cost-test
     let file = big(5000);
     let airport = |n: i64| encode_key(&[Value::Integer(n)]);
-    // Open the file with room for only 20 pages in memory, so that the counts
-    // are of pages really read.
+    // Open the file with a pool of 20 pages, so that nearly every fetch misses
+    // the pool and `reads` counts reads from the file.
     let reads = |from: Vec<u8>, until: Vec<u8>| {
         let pager = Pager::with_capacity(Box::new(file.clone()), 20).unwrap();
         let mut db = Database::with_pager(pager).unwrap();
@@ -542,6 +561,7 @@ fn indexes_against_a_model() {
         model.iter().map(|(id, row)| (row.1, *id)).collect();
     by_u.sort();
     assert_eq!(ids, by_u.iter().map(|(_, id)| *id).collect::<Vec<_>>());
+    // The run ends with 100 rows in the table.
     assert_eq!(model.len(), 100);
     db.check().unwrap();
     // @end

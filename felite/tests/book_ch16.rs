@@ -200,7 +200,7 @@ fn total(db: &mut Database) -> i64 {
     };
     let balance = |row: &Vec<Value>| match row[0] {
         Value::Integer(n) => n,
-        _ => 0,
+        _ => panic!("a balance that is not an integer"),
     };
     result.rows.iter().map(balance).sum()
 }
@@ -212,15 +212,43 @@ const BONUS: &str =
 #[test]
 fn checking_a_whole_database() {
     // @listing check-test
-    let disk = CrashDisk::new();
-    let mut db = bank(&disk);
+    let mut db = Database::open(Box::new(MemFile::new())).unwrap();
+    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, note TEXT)").unwrap();
+    let long = "x".repeat(3000);
+    db.execute(&format!("INSERT INTO t (note) VALUES ('{long}')")).unwrap();
+    // The header, the schema table, t's leaf and the long row's overflow page.
     db.check().unwrap();
+    assert_eq!(db.pager().page_count().unwrap(), 4);
 
     // Add a page that belongs to nothing, and the count no longer adds up.
     db.pager().allocate(Page::new()).unwrap();
     let error = db.check().unwrap_err().to_string();
-    assert_eq!(error, "corrupt database: 7 pages are accounted for, of 8");
+    assert_eq!(error, "corrupt database: 4 pages are accounted for, of 5");
     // @end
+}
+
+#[test]
+fn a_free_count_read_from_the_file_is_checked() {
+    // A header that claims four billion free pages, over a list that is a loop.
+    let file = MemFile::new();
+    let mut db = Database::open(Box::new(file.clone())).unwrap();
+    db.execute("CREATE TABLE a (x INTEGER)").unwrap();
+    db.execute("CREATE TABLE b (x INTEGER)").unwrap();
+    db.execute("DROP TABLE a").unwrap();
+    db.execute("DROP TABLE b").unwrap();
+    let mut bytes = file.bytes();
+    let head = u32::from_be_bytes(bytes[24..28].try_into().unwrap()) as usize;
+    let next =
+        u32::from_be_bytes(bytes[head * PAGE_SIZE + 4..][..4].try_into().unwrap());
+    // Point the second free page back at the first.
+    bytes[next as usize * PAGE_SIZE + 4..][..4]
+        .copy_from_slice(&(head as u32).to_be_bytes());
+    bytes[28..32].copy_from_slice(&u32::MAX.to_be_bytes());
+    let mut damaged = MemFile::new();
+    damaged.write_at(0, &bytes).unwrap();
+    let mut pager = Pager::open(Box::new(damaged)).unwrap();
+    let error = pager.check_free_list().unwrap_err().to_string();
+    assert_eq!(error, "corrupt database: 4294967295 free pages in a file of 4");
 }
 
 #[test]

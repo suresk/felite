@@ -71,7 +71,7 @@ impl Cursor {
             if page.kind() != LEAF {
                 let n = self.leaf;
                 return Err(Error::Corrupt(format!(
-                    "page {n} is in a chain of leaves"
+                    "page {n} is in a chain of leaves but is not a leaf"
                 )));
             }
             if self.slot < page.cell_count() {
@@ -84,10 +84,10 @@ impl Cursor {
             }
             (self.leaf, self.slot) = (page.right(), 0);
             // A file has only so many pages. More steps than that, and the leaves
-            // must link in a circle.
+            // must link in a cycle.
             self.steps += 1;
             if self.steps > pager.page_count()? {
-                return Err(Error::Corrupt("the leaves link in a circle".into()));
+                return Err(Error::Corrupt("the leaves link in a cycle".into()));
             }
         }
     }

@@ -196,6 +196,15 @@ fn binary_type(op: BinaryOp, left: &Bound, right: &Bound) -> Result<Type> {
 pub fn bind(expr: &Expr, scope: &Scope) -> Result<Bound> {
     let span = expr.span;
     let (kind, ty) = match &expr.kind {
+        // @hide
+        ExprKind::Call { function, .. } => {
+            let name = function.name();
+            return invalid(
+                span,
+                format!("{name} is an aggregate, and can't be used here"),
+            );
+        }
+        // @show
         ExprKind::Literal(value) => {
             let ty = match value {
                 Value::Null => Type::Null,
@@ -241,14 +250,6 @@ pub fn bind(expr: &Expr, scope: &Scope) -> Result<Bound> {
             let operand = Box::new(bind(operand, scope)?);
             (BoundKind::IsNull { operand, negated: *negated }, Type::Condition)
         }
-        // @hide
-        ExprKind::Call { function, .. } => {
-            let name = function.name();
-            return invalid(
-                span,
-                format!("{name} is an aggregate, and can't be used here"),
-            );
-        } // @show
     };
     Ok(Bound { kind, ty, span })
 }

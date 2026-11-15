@@ -72,7 +72,7 @@ fn what_insert_refuses() {
 fn the_first_split() {
     // @listing first-split
     let (mut pager, tree) = new_tree();
-    // The even ids from 0 to 152: 77 rows, which fill one leaf exactly.
+    // The even ids from 0 to 152: 77 rows, leaving no room for a 78th.
     for id in (0..154).step_by(2) {
         add(&tree, &mut pager, id, 40);
     }
@@ -177,7 +177,7 @@ fn check_finds_damage() {
     let message = damaged(1, &|page| {
         let (a, b) = (page.cell(4).unwrap().to_vec(), page.cell(5).unwrap().to_vec());
         page.remove_cell(4).unwrap();
-        page.insert_cell(5, &a).unwrap();
+        assert!(page.insert_cell(5, &a).unwrap());
         assert_eq!(page.cell(4).unwrap(), b);
     });
     assert_eq!(
@@ -189,7 +189,7 @@ fn check_finds_damage() {
     let message = damaged(1, &|page| {
         let (_, key) = parse_interior(good[1].cell(12).unwrap()).unwrap();
         page.remove_cell(12).unwrap();
-        page.insert_cell(12, &interior_cell(1, key)).unwrap();
+        assert!(page.insert_cell(12, &interior_cell(1, key)).unwrap());
     });
     assert_eq!(message, "corrupt database: page 1: reached twice");
     tree.check(&mut pager).unwrap(); // everything was put back

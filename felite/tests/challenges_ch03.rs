@@ -132,4 +132,17 @@ fn a_hole_of_the_right_size_is_reused() {
     assert_eq!(page.u16_at(6), 1000);
     assert!(!insert_cell_reusing(&mut page, 0, &[7; 2000]).unwrap());
     check_slotted(&page).unwrap();
+
+    // A header that counts fewer bytes in holes than the hole found is corrupt,
+    // and the page is left as it was.
+    let mut page = page_of(&[&[1; 10], &[2; 10], &[3; 10]]);
+    page.remove_cell(1).unwrap();
+    page.put_u16(6, 5);
+    let before = page.clone();
+    let error = insert_cell_reusing(&mut page, 0, &[5; 10]).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "corrupt database: a 10-byte hole, and the header counts 5"
+    );
+    assert_eq!(page.bytes(), before.bytes());
 }

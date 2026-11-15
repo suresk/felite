@@ -1,10 +1,10 @@
 //! Ten questions asked of the full data set, with each one's plan, its time and
 //! the pages it read: `cargo run --release --example queries`. Run the `load`
 //! example first.
+// @listing queries
 use felite::{Database, Output};
 use std::time::Instant;
 
-// @listing queries
 const QUERIES: [&str; 10] = [
     "SELECT * FROM flights WHERE id = 500000",
     "SELECT carrier, number, dest, delay FROM flights

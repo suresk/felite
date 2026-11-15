@@ -13,7 +13,10 @@ const TEXT: u8 = 3;
 
 // @listing encode-key
 /// Writes values as bytes such that comparing two results byte by byte gives the
-/// same answer as comparing the values, one after another, with `order`.
+/// same answer as comparing the values, one after another, with `order`, as long
+/// as values in the same place are of the same kind or one of them is NULL. Every
+/// integer sorts before every real, so a lookup key must be built from a value of
+/// the column's own type.
 pub fn encode_key(values: &[Value]) -> Vec<u8> {
     let mut key = Vec::new();
     for value in values {
@@ -21,9 +24,9 @@ pub fn encode_key(values: &[Value]) -> Vec<u8> {
             Value::Null => key.push(NULL),
             Value::Integer(i) => {
                 key.push(INTEGER);
-                // Big-endian, with the sign bit turned over so that negative
+                // Big-endian, with the sign bit flipped so that negative
                 // numbers come first.
-                key.extend((*i as u64 ^ (1 << 63)).to_be_bytes());
+                key.extend((i ^ i64::MIN).to_be_bytes());
             }
             Value::Real(x) => {
                 key.push(REAL);
@@ -50,10 +53,11 @@ pub fn encode_key(values: &[Value]) -> Vec<u8> {
 // @listing real-bits
 /// The bits of a real, rearranged so that they sort as an unsigned integer.
 fn real_bits(x: f64) -> u64 {
-    let bits = x.to_bits();
+    // -0.0 is equal to 0.0, so it gets the same key.
+    let bits = if x == 0.0 { 0 } else { x.to_bits() };
     if bits >> 63 == 1 {
-        // A negative number: the larger its bits, the smaller it is. Turning
-        // every bit over reverses that and puts it below the positive numbers.
+        // A negative number: the larger its bits, the smaller it is. Inverting
+        // every bit reverses that and puts it below the positive numbers.
         !bits
     } else {
         bits | (1 << 63)
@@ -62,8 +66,9 @@ fn real_bits(x: f64) -> u64 {
 // @end
 
 // @listing after
-/// A key that is greater than every key that begins with `prefix`, and less
-/// than or equal to every greater key that doesn't.
+/// The end of the range of index keys that begin with `prefix`, a sequence of
+/// whole encoded values. What follows such a prefix in a key is a tag (at most
+/// 3) or eight bytes of row id, so nine `FF` bytes sort after all of them.
 pub fn after(prefix: &[u8]) -> Vec<u8> {
     let mut key = prefix.to_vec();
     key.extend([0xFF; 9]);

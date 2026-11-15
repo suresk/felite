@@ -98,6 +98,19 @@ fn what_free_refuses() {
     pager.free(1).unwrap();
     assert_eq!(message(&mut pager, 1), "corrupt database: page 1 cannot be freed");
     assert_eq!(pager.free_count().unwrap(), 1);
+
+    // The count in the header is a number from the file, and is checked as one.
+    pager.page_mut(0).unwrap().put_u32(28, 0); // page 1 is on the list
+    let error = pager.allocate(Page::new()).unwrap_err().to_string();
+    assert_eq!(
+        error,
+        "corrupt database: the free list holds page 1 but its count is 0"
+    );
+    pager.page_mut(0).unwrap().put_u32(28, 1);
+    assert_eq!(pager.allocate(Page::new()).unwrap(), 1);
+    pager.page_mut(0).unwrap().put_u32(28, u32::MAX);
+    let error = message(&mut pager, 1);
+    assert_eq!(error, "corrupt database: the header counts 4294967295 free pages");
     // @end
 }
 
@@ -342,4 +355,29 @@ fn destroying_a_tree() {
     // The other tree, whose pages were interleaved with it in the file, is intact.
     assert_eq!(keep.check(&mut pager).unwrap().entries, 5000);
     // @end
+}
+
+// Not printed: a regression test for a damaged fragmented field (Section 3.6's
+// header field at byte 6), which `free_space` and `remove_cell` report as corrupt.
+#[test]
+fn a_damaged_fragmented_field_is_an_error() {
+    let (mut pager, tree) = new_tree();
+    for id in 1..=3 {
+        add(&tree, &mut pager, id, 50);
+    }
+    pager.page_mut(tree.root()).unwrap().put_u16(6, 0xFFFF);
+    let error = tree.check(&mut pager).unwrap_err();
+    assert!(matches!(error, felite::Error::Corrupt(_)), "{error:?}");
+
+    // In a tree of two levels, a delete from the damaged leaf.
+    let (mut pager, tree) = new_tree();
+    for id in 1..=40 {
+        add(&tree, &mut pager, id, 900);
+    }
+    let root = pager.page(tree.root()).unwrap().clone();
+    assert_eq!(root.kind(), INTERIOR);
+    let (leaf, _) = felite::parse_interior(root.cell(0).unwrap()).unwrap();
+    pager.page_mut(leaf).unwrap().put_u16(6, 0x8000);
+    let error = tree.delete(&mut pager, &row_key(1)).unwrap_err();
+    assert!(matches!(error, felite::Error::Corrupt(_)), "{error:?}");
 }

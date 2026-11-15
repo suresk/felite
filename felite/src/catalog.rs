@@ -89,7 +89,7 @@ impl Table {
         let values = decode(record)?;
         let [
             Value::Text(kind),
-            Value::Text(_),
+            Value::Text(name),
             Value::Integer(root),
             Value::Text(sql),
         ] = values.as_slice()
@@ -99,15 +99,23 @@ impl Table {
         if kind != "table" {
             return Err(bad("not a table"));
         }
-        let Ok(root) = PageNo::try_from(*root) else {
+        // Page 0 is the header, so it is no tree's root.
+        let Ok(root @ 1..) = PageNo::try_from(*root) else {
             return Err(bad("a root page out of range"));
         };
-        let Ok(Statement::CreateTable(create)) = parse(sql) else {
-            return Err(bad("its SQL is not a CREATE TABLE statement"));
+        let create = match parse(sql) {
+            Ok(Statement::CreateTable(create)) => create,
+            Ok(_) => return Err(bad("its SQL is not a CREATE TABLE statement")),
+            Err(error) => {
+                return Err(bad(&format!("its SQL does not parse: {error}")));
+            }
         };
-        let Ok(key_column) = key_column(&create) else {
-            return Err(bad("its table definition is not valid"));
-        };
+        if create.name != *name {
+            return Err(bad("its name and its SQL disagree"));
+        }
+        let key_column = key_column(&create).map_err(|error| {
+            bad(&format!("its table definition is invalid: {error}"))
+        })?;
         Ok(Table {
             name: create.name,
             columns: create.columns,

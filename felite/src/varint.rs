@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 
 // @listing put-varint
 /// Appends `value` to `out`, seven bits to a byte, the highest bits first. Every
-/// byte but the last has its top bit set.
+/// byte but the last has its continuation bit (the top bit) set.
 pub fn put_varint(out: &mut Vec<u8>, value: u64) {
     let mut groups = 1;
     while groups < 10 && value >> (7 * groups) != 0 {
@@ -41,6 +41,7 @@ pub fn zigzag(value: i64) -> u64 {
     ((value << 1) ^ (value >> 63)) as u64
 }
 
+/// The inverse of `zigzag`.
 pub fn unzigzag(value: u64) -> i64 {
     (value >> 1) as i64 ^ -((value & 1) as i64)
 }

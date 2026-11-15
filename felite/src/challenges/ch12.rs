@@ -46,7 +46,7 @@ pub fn rename_table(db: &mut Database, old: &str, new: &str) -> Result<()> {
     if fold(old) != fold(new) && db.table(new).is_ok() {
         return sql_error(format!("there is already a table named {new}"));
     }
-    // The parser decides what a name is, so ask it.
+    // A legal name is whatever the parser accepts as a table name.
     let trial = parse(&format!("CREATE TABLE {new} (x INTEGER)"));
     let parsed =
         matches!(trial, Ok(Statement::CreateTable(create)) if create.name == new);

@@ -2,8 +2,9 @@
 
 use crate::catalog::sql_error;
 use crate::db::{Database, Output};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::sql::{Statement, parse};
+use std::io;
 
 // @listing transaction-state
 /// Where a database stands between `BEGIN` and `COMMIT`.
@@ -20,11 +21,24 @@ pub enum Transaction {
 // @end
 
 impl Database {
+    // @listing transaction-accessor
+    /// Where the database stands: in no transaction, in an open one, or in one
+    /// that has failed and not been ended.
+    pub fn transaction(&self) -> Transaction {
+        self.transaction
+    }
+    // @end
+
     // @listing transact
     /// Runs one statement on a database that has a log.
     pub(crate) fn transact(&mut self, sql: &str) -> Result<Output> {
         use Transaction::{Closed, Failed, Open};
-        let statement = parse(sql)?;
+        let statement = match parse(sql) {
+            Ok(statement) => statement,
+            // A statement that can't be parsed fails a transaction like any other.
+            Err(error) if self.transaction == Open => return self.fail(error),
+            Err(error) => return Err(error),
+        };
         match (&statement, self.transaction) {
             (Statement::Begin, Closed) => self.transaction = Open,
             (Statement::Begin, _) => {
@@ -64,42 +78,42 @@ impl Database {
                 }
                 Ok(output)
             }
-            Err(error) => {
-                // Whatever the statement had done so far is undone, along with
-                // everything else in its transaction.
-                self.rollback()?;
-                if self.transaction == Transaction::Open {
-                    self.transaction = Transaction::Failed;
-                }
-                Err(error)
-            }
+            Err(error) => self.fail(error),
         }
     }
 
-    /// Commits, and if that fails, makes sure nothing is left half done.
-    fn commit_or_undo(&mut self) -> Result<()> {
-        let committed = self.pager.commit();
-        if committed.is_err() {
-            self.rollback()?;
+    /// Undoes whatever the failed statement had done, along with everything else
+    /// in its transaction, which is then `Failed`. Returns the statement's error.
+    fn fail<T>(&mut self, error: Error) -> Result<T> {
+        if self.transaction == Transaction::Open {
+            self.transaction = Transaction::Failed;
         }
-        committed
+        self.rollback()?;
+        Err(error)
+    }
+
+    /// Commits. If that fails, the changes in memory are discarded, and the error
+    /// says that only a reopened database can tell whether the commit happened.
+    fn commit_or_undo(&mut self) -> Result<()> {
+        let Err(error) = self.pager.commit() else { return Ok(()) };
+        self.rollback()?;
+        let what = format!(
+            "the commit failed ({error}); whether it took effect is unknown \
+             until the database is reopened"
+        );
+        Err(Error::Io(io::Error::other(what)))
     }
     // @end
 
     // @listing db-rollback
     /// Undoes everything since the last commit: the pages, and what the database
-    /// remembers about its tables.
+    /// holds about its tables.
     pub(crate) fn rollback(&mut self) -> Result<()> {
         self.pager.rollback()?;
         let (schema, tables) = Database::read_catalog(&mut self.pager)?;
         self.schema = schema;
         self.tables = tables;
         Ok(())
-    }
-
-    /// Whether a transaction is open, or has failed and not been ended.
-    pub fn transaction(&self) -> Transaction {
-        self.transaction
     }
     // @end
 }

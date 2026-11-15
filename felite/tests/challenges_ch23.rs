@@ -50,7 +50,7 @@ fn predict_keys() {
     assert_eq!(hex(&encode_key(&[Value::Integer(-2)])), "01 7f ff ff ff ff ff ff fe");
     assert_eq!(hex(&encode_key(&[text("WN"), Value::Null])), "03 57 4e 00 00 00");
     assert_eq!(hex(&encode_key(&[Value::Real(0.0)])), "02 80 00 00 00 00 00 00 00");
-    assert_eq!(hex(&encode_key(&[Value::Real(-0.0)])), "02 7f ff ff ff ff ff ff ff");
+    assert_eq!(hex(&encode_key(&[Value::Real(-0.0)])), "02 80 00 00 00 00 00 00 00");
     let key = |s: &str| encode_key(&[text(s)]);
     assert!(key("DEN") < key("DENVER") && key("DENVER") < key("DFW"));
     assert!(key("Z") < key("a") && key("") < key("\0"));
@@ -62,7 +62,7 @@ fn values_back_from_a_key() {
     let rows = [
         vec![Value::Null, Value::Integer(-7), Value::Real(-2.5), text("a\0b")],
         vec![text(""), text("ATL"), Value::Integer(i64::MAX), Value::Real(0.0)],
-        vec![Value::Real(f64::MAX), Value::Real(-0.0), Value::Integer(i64::MIN)],
+        vec![Value::Real(f64::MAX), Value::Real(-1e-300), Value::Integer(i64::MIN)],
         vec![],
     ];
     for row in rows {
@@ -217,4 +217,44 @@ fn a_join_through_an_index() {
     let keys = (key(&db, "flights", "tail"), key(&db, "flights", "tail"));
     let mut hash = HashJoin::new(outer, inner, keys, 13, false);
     assert_eq!(rows, drain(&mut db, &mut hash));
+}
+
+// @challenge 5
+#[test]
+fn an_index_join_across_integer_and_real() {
+    // An INTEGER key looked up in an index on a REAL column, and the other way
+    // round, finds what the SQL join finds.
+    let mut db = Database::open(Box::new(MemFile::new())).unwrap();
+    db.execute("CREATE TABLE a (id INTEGER PRIMARY KEY, x INTEGER, r REAL)").unwrap();
+    db.execute("CREATE TABLE b (id INTEGER PRIMARY KEY, y REAL, n INTEGER)").unwrap();
+    db.execute("INSERT INTO a VALUES (1, 2, 3.0)").unwrap();
+    db.execute("INSERT INTO a VALUES (2, 5, 2.5)").unwrap();
+    db.execute("INSERT INTO b VALUES (1, 2.0, 3)").unwrap();
+    db.execute("INSERT INTO b VALUES (2, 7.5, 2)").unwrap();
+    db.execute("CREATE INDEX b_y ON b (y)").unwrap();
+    db.execute("CREATE INDEX b_n ON b (n)").unwrap();
+    let joined = |db: &mut Database, outer: &str, index: &str| {
+        let (a, b) = (db.table("a").unwrap().clone(), db.table("b").unwrap().clone());
+        let index = b.index(index).unwrap().clone();
+        let key = bind(&parse_expr(outer).unwrap(), &Scope::of(&a)).unwrap();
+        let scan = Box::new(Scan::new(&a, db.pager()).unwrap());
+        let mut join = IndexLoop::new(scan, &b, &index, key);
+        let mut ids = Vec::new();
+        while let Some(row) = join.next(db.pager()).unwrap() {
+            ids.push((row[0].to_string(), row[3].to_string()));
+        }
+        ids
+    };
+    let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+    assert_eq!(joined(&mut db, "x", "b_y"), [pair("1", "1")]);
+    assert_eq!(
+        query(&mut db, "SELECT a.id, b.id FROM a JOIN b ON a.x = b.y"),
+        ["1 1"]
+    );
+    // 3.0 finds the integer 3. 2.5 can equal no integer, and finds nothing.
+    assert_eq!(joined(&mut db, "r", "b_n"), [pair("1", "1")]);
+    assert_eq!(
+        query(&mut db, "SELECT a.id, b.id FROM a JOIN b ON a.r = b.n"),
+        ["1 1"]
+    );
 }

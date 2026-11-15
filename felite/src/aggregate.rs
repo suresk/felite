@@ -1,6 +1,6 @@
 //! Aggregates and GROUP BY: one row out for each group of rows in.
 
-use crate::bind::{Bound, Scope, ScopeColumn, Type, bind, bind_condition};
+use crate::bind::{Bound, BoundKind, Scope, ScopeColumn, Type, bind, bind_condition};
 use crate::catalog::{fold, sql_error};
 use crate::db::{Database, Output};
 use crate::error::{Error, Result};
@@ -86,7 +86,7 @@ fn real(value: &Value) -> f64 {
     match value {
         Value::Integer(i) => *i as f64,
         Value::Real(x) => *x,
-        _ => f64::NAN,
+        _ => unreachable!("bind_call lets only numbers into SUM and AVG"),
     }
 }
 
@@ -109,14 +109,14 @@ fn plus(total: &Value, value: &Value, span: Span) -> Result<Value> {
 // @end
 
 // @listing aggregate
-/// Reads all of its input, sorts the rows into groups, and hands on one row for
+/// Reads all of its input, sorts the rows into groups, and yields one row for
 /// each group: the values the group was formed by, then the value of each
 /// aggregate over the group's rows.
 pub struct Aggregate {
     input: Box<dyn Operator>,
     groups: Vec<Bound>,
     calls: Vec<AggregateCall>,
-    /// The rows to hand on, once the input has been read, with the first one last.
+    /// The rows to yield, once the input has been read, with the first one last.
     output: Option<Vec<Row>>,
 }
 
@@ -175,34 +175,62 @@ impl Aggregate {
 }
 
 // @listing same
-/// Whether two expressions are the same expression, wherever each was written.
+/// Whether two expressions are written alike, wherever each was written.
 fn same(a: &Expr, b: &Expr) -> bool {
-    use ExprKind::*;
-    let same_box = |a: &Option<Box<Expr>>, b: &Option<Box<Expr>>| match (a, b) {
+    let same_arg = |a: Option<&Expr>, b: Option<&Expr>| match (a, b) {
         (Some(a), Some(b)) => same(a, b),
         (None, None) => true,
         _ => false,
     };
     match (&a.kind, &b.kind) {
-        (Literal(a), Literal(b)) => a == b,
-        (Column { table: t, name: n }, Column { table: u, name: m }) => {
-            fold(n) == fold(m) && t.as_deref().map(fold) == u.as_deref().map(fold)
-        }
-        (Unary { op: p, operand: a }, Unary { op: q, operand: b }) => {
-            p == q && same(a, b)
-        }
+        (ExprKind::Literal(a), ExprKind::Literal(b)) => a == b,
         (
-            Binary { op: p, left: a, right: b },
-            Binary { op: q, left: c, right: d },
+            ExprKind::Column { table: t, name: n },
+            ExprKind::Column { table: u, name: m },
+        ) => fold(n) == fold(m) && t.as_deref().map(fold) == u.as_deref().map(fold),
+        (
+            ExprKind::Unary { op: p, operand: a },
+            ExprKind::Unary { op: q, operand: b },
+        ) => p == q && same(a, b),
+        (
+            ExprKind::Binary { op: p, left: a, right: b },
+            ExprKind::Binary { op: q, left: c, right: d },
         ) => p == q && same(a, c) && same(b, d),
-        (IsNull { operand: a, negated: p }, IsNull { operand: b, negated: q }) => {
-            p == q && same(a, b)
-        }
-        (Call { function: p, arg: a }, Call { function: q, arg: b }) => {
-            p == q && same_box(a, b)
-        }
-        _ => false,
+        (
+            ExprKind::IsNull { operand: a, negated: p },
+            ExprKind::IsNull { operand: b, negated: q },
+        ) => p == q && same(a, b),
+        (
+            ExprKind::Call { function: p, arg: a },
+            ExprKind::Call { function: q, arg: b },
+        ) => p == q && same_arg(a.as_deref(), b.as_deref()),
+        // Listed by kind, so that a new kind of expression must be added here.
+        (
+            ExprKind::Literal(_)
+            | ExprKind::Column { .. }
+            | ExprKind::Unary { .. }
+            | ExprKind::Binary { .. }
+            | ExprKind::IsNull { .. }
+            | ExprKind::Call { .. },
+            _,
+        ) => false,
     }
+}
+// @end
+
+// @listing could-be
+/// Whether a column could be the one that a GROUP BY expression names: the
+/// names match, and so do the tables if both are given. Binding against the
+/// aggregation's output settles it.
+fn could_be(group: &Expr, table: Option<&str>, name: &str) -> bool {
+    let ExprKind::Column { table: t, name: n } = &group.kind else {
+        return false;
+    };
+    let tables = match (t.as_deref(), table) {
+        (Some(t), Some(u)) => fold(t) == fold(u),
+        _ => true,
+    };
+    fold(n) == fold(name) && tables
 }
 // @end
 
@@ -242,7 +270,7 @@ struct Grouping<'a> {
     calls: Vec<Expr>,
 }
 
-/// A reference to column `n` of the aggregation's output.
+/// A reference to column `n` of the aggregation's output, by its `#` name.
 fn output_column(n: usize, span: Span) -> Expr {
     Expr { kind: ExprKind::Column { table: None, name: format!("#{n}") }, span }
 }
@@ -251,35 +279,42 @@ fn output_column(n: usize, span: Span) -> Expr {
 // @listing rewrite
 impl Grouping<'_> {
     /// Rewrites an expression over the table's rows as one over the rows that
-    /// the aggregation hands on. A column that is neither grouped nor inside an
+    /// the aggregation yields. A column that is neither grouped nor inside an
     /// aggregate has no value there, and is an error.
     fn rewrite(&mut self, expr: &Expr) -> Result<Expr> {
-        if let Some(n) = self.groups.iter().position(|group| same(group, expr)) {
-            return Ok(output_column(n, expr.span));
-        }
-        let kind = match &expr.kind {
-            ExprKind::Call { .. } => {
-                let found = self.calls.iter().position(|call| same(call, expr));
-                let n = found.unwrap_or(self.calls.len());
-                if found.is_none() {
-                    self.calls.push(expr.clone());
+        let group = self.groups.iter().position(|group| same(group, expr));
+        let kind = match (&expr.kind, group) {
+            // A grouped column keeps its name in the output, and is found there
+            // by binding, however the query qualifies it.
+            (ExprKind::Column { table, name }, _) => {
+                let table = table.as_deref();
+                if self.groups.iter().any(|group| could_be(group, table, name)) {
+                    return Ok(expr.clone());
                 }
-                return Ok(output_column(self.groups.len() + n, expr.span));
-            }
-            ExprKind::Column { name, .. } => {
                 let message =
                     format!("{name} must be in the GROUP BY or inside an aggregate");
                 return Err(Error::Invalid(message, expr.span));
             }
-            ExprKind::Literal(value) => ExprKind::Literal(value.clone()),
-            ExprKind::Unary { op, operand } => {
+            (_, Some(n)) => return Ok(output_column(n, expr.span)),
+            (ExprKind::Call { .. }, None) => {
+                let n = match self.calls.iter().position(|call| same(call, expr)) {
+                    Some(n) => n,
+                    None => {
+                        self.calls.push(expr.clone());
+                        self.calls.len() - 1
+                    }
+                };
+                return Ok(output_column(self.groups.len() + n, expr.span));
+            }
+            (ExprKind::Literal(value), None) => ExprKind::Literal(value.clone()),
+            (ExprKind::Unary { op, operand }, None) => {
                 ExprKind::Unary { op: *op, operand: Box::new(self.rewrite(operand)?) }
             }
-            ExprKind::IsNull { operand, negated } => ExprKind::IsNull {
+            (ExprKind::IsNull { operand, negated }, None) => ExprKind::IsNull {
                 operand: Box::new(self.rewrite(operand)?),
                 negated: *negated,
             },
-            ExprKind::Binary { op, left, right } => {
+            (ExprKind::Binary { op, left, right }, None) => {
                 let left = Box::new(self.rewrite(left)?);
                 let right = Box::new(self.rewrite(right)?);
                 ExprKind::Binary { op: *op, left, right }
@@ -294,7 +329,9 @@ impl Grouping<'_> {
 /// Checks one aggregate against the table's columns, and works out the type of
 /// its result.
 fn bind_call(call: &Expr, scope: &Scope) -> Result<(AggregateCall, Type)> {
-    let ExprKind::Call { function, arg } = &call.kind else { unreachable!() };
+    let ExprKind::Call { function, arg } = &call.kind else {
+        unreachable!("rewrite collects only calls")
+    };
     let arg = match arg {
         Some(arg) => Some(bind(arg, scope)?),
         None => None,
@@ -318,9 +355,9 @@ fn bind_call(call: &Expr, scope: &Scope) -> Result<(AggregateCall, Type)> {
 
 // @listing column-name
 /// The name of a result column, by the rule of Section 14.6.
-fn column_name(expr: &Expr, alias: &Option<String>) -> String {
+fn column_name(expr: &Expr, alias: Option<&str>) -> String {
     match (alias, &expr.kind) {
-        (Some(alias), _) => alias.clone(),
+        (Some(alias), _) => alias.to_string(),
         (None, ExprKind::Column { name, .. }) => name.clone(),
         (None, _) => expr.to_string(),
     }
@@ -348,7 +385,7 @@ pub(crate) fn rewrite_query(select: &Select) -> Result<Rewritten> {
             return sql_error("a query with groups can't select *".to_string());
         };
         items.push(grouping.rewrite(expr)?);
-        columns.push(column_name(expr, alias));
+        columns.push(column_name(expr, alias.as_deref()));
     }
     let having = match &select.having {
         Some(having) => Some(grouping.rewrite(having)?),
@@ -364,26 +401,32 @@ pub(crate) fn rewrite_query(select: &Select) -> Result<Rewritten> {
 
 // @listing output-scope
 /// Binds the GROUP BY expressions and the aggregates against the table. Returns
-/// them, with a scope that describes the rows the aggregation will hand on.
+/// them, with a scope that describes the rows the aggregation will yield.
 pub(crate) fn bind_grouping(
     groups: &[Expr],
     calls: &[Expr],
     scope: &Scope,
 ) -> Result<(Vec<Bound>, Vec<AggregateCall>, Scope)> {
-    let (mut bound_groups, mut bound_calls) = (Vec::new(), Vec::new());
+    let (mut bound_groups, mut bound_calls) = (Vec::<Bound>::new(), Vec::new());
     let mut columns = Vec::new();
-    let mut column = |ty: Type| {
-        let name = format!("#{}", columns.len());
-        columns.push(ScopeColumn { table: String::new(), name, ty });
+    let numbered = |n: usize, ty: Type| ScopeColumn {
+        table: String::new(),
+        name: format!("#{n}"),
+        ty,
     };
     for group in groups {
         let group = bind(group, scope)?;
-        column(group.ty);
+        let again = bound_groups.iter().any(|earlier| earlier.kind == group.kind);
+        // A grouped column keeps its table's name and its own, the first time.
+        columns.push(match group.kind {
+            BoundKind::Column(at) if !again => scope.columns[at].clone(),
+            _ => numbered(columns.len(), group.ty),
+        });
         bound_groups.push(group);
     }
     for call in calls {
         let (call, ty) = bind_call(call, scope)?;
-        column(ty);
+        columns.push(numbered(columns.len(), ty));
         bound_calls.push(call);
     }
     Ok((bound_groups, bound_calls, Scope { columns }))

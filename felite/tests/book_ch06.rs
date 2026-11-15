@@ -187,10 +187,8 @@ fn the_next_row_id() {
         add(&tree, &mut pager, id, 40);
     }
     assert_eq!(tree.last_key(&mut pager).unwrap().unwrap(), row_key(500));
-    assert_eq!(
-        ids_from(Cursor::first(&tree, &mut pager).unwrap(), &mut pager).len(),
-        500
-    );
+    let ids = ids_from(Cursor::first(&tree, &mut pager).unwrap(), &mut pager);
+    assert_eq!(ids, (1..=500).collect::<Vec<i64>>()); // in order, none skipped
 
     // A row id chosen by hand moves the high-water mark.
     add(&tree, &mut pager, 9000, 40);
@@ -240,7 +238,7 @@ fn leaves_in_a_circle() {
             Err(error) => break error,
         }
     };
-    assert_eq!(error.to_string(), "corrupt database: the leaves link in a circle");
+    assert_eq!(error.to_string(), "corrupt database: the leaves link in a cycle");
     // The file has five pages, so the cursor gave up on its sixth step to a new
     // leaf, having read the 200 rows twice over.
     assert_eq!(rows, 400);

@@ -213,25 +213,40 @@ fn a_definition_longer_than_a_cell() {
 #[test]
 fn a_damaged_schema_is_an_error() {
     // @listing damaged-schema
-    let (mut db, file) = new_database();
-    db.execute("CREATE TABLE flights (id INTEGER PRIMARY KEY)").unwrap();
-    // Add a row to the schema table by hand whose SQL is not a table definition.
-    let record = felite::encode(&[
-        Value::Text("table".to_string()),
-        Value::Text("ghost".to_string()),
-        Value::Integer(9),
-        Value::Text("SELECT 1 FROM nowhere".to_string()),
-    ]);
-    let schema = db.schema();
-    schema.insert_row(db.pager(), 2, &record).unwrap();
-    db.pager().flush().unwrap();
-
-    let Err(error) = Database::open(Box::new(file)) else {
-        panic!("this should not open")
+    // A database with one table, on page 2, and a second schema row added by
+    // hand. Opening it again gives an error that names the row.
+    let opened = |name: &str, root: i64, sql: &str| {
+        let (mut db, file) = new_database();
+        db.execute("CREATE TABLE flights (id INTEGER PRIMARY KEY)").unwrap();
+        let text = |s: &str| Value::Text(s.to_string());
+        let record = felite::encode(&[
+            text("table"),
+            text(name),
+            Value::Integer(root),
+            text(sql),
+        ]);
+        db.schema().insert_row(db.pager(), 2, &record).unwrap();
+        db.pager().flush().unwrap();
+        let error = Database::open(Box::new(file)).err().unwrap();
+        error.to_string().replace("corrupt database: schema row 2: ", "")
     };
+    let table = "CREATE TABLE ghost (x INTEGER)";
     assert_eq!(
-        error.to_string(),
-        "corrupt database: schema row 2: its SQL is not a CREATE TABLE statement"
+        opened("ghost", 3, "SELECT 1 FROM nowhere"),
+        "its SQL is not a CREATE TABLE statement"
+    );
+    assert_eq!(
+        opened("ghost", 3, "CREATE TABLE ghost ("),
+        "its SQL does not parse: syntax error at line 1, column 21: \
+         expected a column name, found the end of the statement"
+    );
+    assert_eq!(opened("other", 3, table), "its name and its SQL disagree");
+    assert_eq!(opened("ghost", 0, table), "a root page out of range");
+    assert_eq!(opened("ghost", 9, table), "root page 9 is past the end of the file");
+    assert_eq!(opened("ghost", 2, table), "root page 2 belongs to another tree");
+    assert_eq!(
+        opened("FLIGHTS", 3, "CREATE TABLE FLIGHTS (x INTEGER)"),
+        "a second table named FLIGHTS"
     );
     // @end
 }

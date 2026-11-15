@@ -187,7 +187,7 @@ pub enum ExprKind {
 
 // @listing function
 /// The aggregate functions.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Function {
     Count,
     Sum,
@@ -197,25 +197,23 @@ pub enum Function {
 }
 
 impl Function {
-    const ALL: [(&str, Function); 5] = [
-        ("COUNT", Function::Count),
-        ("SUM", Function::Sum),
-        ("MIN", Function::Min),
-        ("MAX", Function::Max),
-        ("AVG", Function::Avg),
-    ];
+    const ALL: [Function; 5] =
+        [Function::Count, Function::Sum, Function::Min, Function::Max, Function::Avg];
 
     /// The function a word names, in any mix of upper and lower case.
     pub fn from_word(word: &str) -> Option<Function> {
-        let found =
-            Function::ALL.iter().find(|(name, _)| name.eq_ignore_ascii_case(word));
-        found.map(|(_, function)| *function)
+        Function::ALL.into_iter().find(|f| f.name().eq_ignore_ascii_case(word))
     }
 
     /// How the function is written, in capitals.
     pub fn name(self) -> &'static str {
-        let found = Function::ALL.iter().find(|(_, function)| *function == self);
-        found.map_or("?", |(name, _)| name)
+        match self {
+            Function::Count => "COUNT",
+            Function::Sum => "SUM",
+            Function::Min => "MIN",
+            Function::Max => "MAX",
+            Function::Avg => "AVG",
+        }
     }
 }
 // @end
@@ -264,6 +262,14 @@ impl BinaryOp {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.kind {
+            // @hide
+            ExprKind::Call { function, arg: Some(arg) } => {
+                write!(f, "{}({arg})", function.name())
+            }
+            ExprKind::Call { function, arg: None } => {
+                write!(f, "{}(*)", function.name())
+            }
+            // @show
             ExprKind::Literal(Value::Null) => write!(f, "NULL"),
             ExprKind::Literal(Value::Integer(i)) => write!(f, "{i}"),
             ExprKind::Literal(Value::Real(x)) => write!(f, "{x:?}"),
@@ -289,13 +295,6 @@ impl fmt::Display for Expr {
             ExprKind::IsNull { operand, negated: true } => {
                 write!(f, "({operand} IS NOT NULL)")
             }
-            // @hide
-            ExprKind::Call { function, arg: Some(arg) } => {
-                write!(f, "{}({arg})", function.name())
-            }
-            ExprKind::Call { function, arg: None } => {
-                write!(f, "{}(*)", function.name())
-            } // @show
         }
     }
 }
@@ -335,66 +334,6 @@ impl fmt::Display for SelectItem {
         }
     }
 }
-
-// @listing display-joins
-impl Select {
-    /// Writes the first table's other name, if it has one, and every JOIN.
-    fn write_joins(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let named = |alias: &Option<String>| match alias {
-            Some(alias) => format!(" {alias}"),
-            None => String::new(),
-        };
-        write!(f, "{}", named(&self.alias))?;
-        for join in &self.joins {
-            let kind = if join.left { " LEFT JOIN" } else { " JOIN" };
-            write!(f, "{kind} {}{} ON {}", join.table, named(&join.alias), join.on)?;
-        }
-        Ok(())
-    }
-}
-// @end
-
-// @listing display-order
-impl Select {
-    /// Whether anything comes after the WHERE clause.
-    fn has_tail(&self) -> bool {
-        // @hide
-        if !self.group_by.is_empty() || self.having.is_some() {
-            return true;
-        }
-        // @show
-        !self.order_by.is_empty() || self.limit.is_some() || self.offset.is_some()
-    }
-
-    /// Writes the WHERE clause and everything after it.
-    fn write_tail(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(filter) = &self.filter {
-            write!(f, " WHERE {filter}")?;
-        }
-        // @hide
-        for (i, group) in self.group_by.iter().enumerate() {
-            let before = if i == 0 { " GROUP BY " } else { ", " };
-            write!(f, "{before}{group}")?;
-        }
-        if let Some(having) = &self.having {
-            write!(f, " HAVING {having}")?;
-        }
-        // @show
-        for (i, key) in self.order_by.iter().enumerate() {
-            let before = if i == 0 { " ORDER BY " } else { ", " };
-            let direction = if key.descending { " DESC" } else { "" };
-            write!(f, "{before}{}{direction}", key.expr)?;
-        }
-        if let Some(limit) = self.limit {
-            write!(f, " LIMIT {limit}")?;
-        }
-        if let Some(offset) = self.offset {
-            write!(f, " OFFSET {offset}")?;
-        }
-        Ok(())
-    }
-}
-// @end
 
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -470,6 +409,68 @@ impl fmt::Display for Statement {
                 }
             }
         }
+    }
+}
+// @end
+
+// @listing display-joins
+impl Select {
+    /// Writes the first table's other name, if it has one, and every JOIN.
+    fn write_joins(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let named = |f: &mut fmt::Formatter, alias: Option<&str>| match alias {
+            Some(alias) => write!(f, " {alias}"),
+            None => Ok(()),
+        };
+        named(f, self.alias.as_deref())?;
+        for join in &self.joins {
+            let kind = if join.left { " LEFT JOIN" } else { " JOIN" };
+            write!(f, "{kind} {}", join.table)?;
+            named(f, join.alias.as_deref())?;
+            write!(f, " ON {}", join.on)?;
+        }
+        Ok(())
+    }
+}
+// @end
+
+// @listing display-order
+impl Select {
+    /// Whether anything comes after the WHERE clause.
+    fn has_tail(&self) -> bool {
+        // @hide
+        if !self.group_by.is_empty() || self.having.is_some() {
+            return true;
+        }
+        // @show
+        !self.order_by.is_empty() || self.limit.is_some() || self.offset.is_some()
+    }
+
+    /// Writes the WHERE clause and everything after it.
+    fn write_tail(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(filter) = &self.filter {
+            write!(f, " WHERE {filter}")?;
+        }
+        // @hide
+        for (i, group) in self.group_by.iter().enumerate() {
+            let before = if i == 0 { " GROUP BY " } else { ", " };
+            write!(f, "{before}{group}")?;
+        }
+        if let Some(having) = &self.having {
+            write!(f, " HAVING {having}")?;
+        }
+        // @show
+        for (i, key) in self.order_by.iter().enumerate() {
+            let before = if i == 0 { " ORDER BY " } else { ", " };
+            let direction = if key.descending { " DESC" } else { "" };
+            write!(f, "{before}{}{direction}", key.expr)?;
+        }
+        if let Some(limit) = self.limit {
+            write!(f, " LIMIT {limit}")?;
+        }
+        if let Some(offset) = self.offset {
+            write!(f, " OFFSET {offset}")?;
+        }
+        Ok(())
     }
 }
 // @end

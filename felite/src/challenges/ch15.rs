@@ -18,7 +18,7 @@ pub fn truncate_table(db: &mut Database, name: &str) -> Result<()> {
     // @show
     table.tree.destroy_rows(&mut db.pager)?;
     table.tree = Tree::create(&mut db.pager)?;
-    // The new tree may have a different root, so the catalog is told.
+    // The new tree may have a different root, so both catalog copies change.
     db.schema.delete_row(&mut db.pager, table.schema_row)?;
     db.schema.insert_row(&mut db.pager, table.schema_row, &table.schema_record())?;
     db.tables.insert(fold(name), table);
@@ -38,7 +38,7 @@ pub fn delete_returning(
     // @hide
     crate::index::no_indexes(&table)?;
     // @show
-    let doomed = db.matching(&table, &Some(parse_expr(condition)?))?;
+    let doomed = db.matching(&table, Some(&parse_expr(condition)?))?;
     for (id, _) in &doomed {
         table.tree.delete_row(&mut db.pager, *id)?;
     }
@@ -60,6 +60,6 @@ pub fn would_affect(db: &mut Database, sql: &str) -> Result<usize> {
         }
     };
     let table = db.table(&table)?.clone();
-    Ok(db.matching(&table, &filter)?.len())
+    Ok(db.matching(&table, filter.as_ref())?.len())
 }
 // @end

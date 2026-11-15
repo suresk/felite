@@ -1,6 +1,7 @@
 //! Chapter 5 challenges: insert-or-replace, counting entries along the leaves, and
 //! building a tree from sorted entries.
 
+use crate::btree::search::MAX_DEPTH;
 use crate::btree::{
     INTERIOR, LEAF, MAX_CELL, Tree, interior_cell, leaf_cell, parse_interior,
 };
@@ -38,13 +39,19 @@ pub fn put(
 // @listing count
 /// The number of entries in the tree, counted by walking along the leaves.
 pub fn count(tree: &Tree, pager: &mut Pager) -> Result<usize> {
-    // Down the left edge to the first leaf.
+    // Down the left edge to the first leaf, no deeper than any tree can be.
     let mut n = tree.root();
+    let mut depth = 1;
     while pager.page(n)?.kind() == INTERIOR {
+        if depth == MAX_DEPTH {
+            let message = format!("a tree more than {MAX_DEPTH} levels deep");
+            return Err(Error::Corrupt(message));
+        }
         (n, _) = parse_interior(pager.page(n)?.cell(0)?)?;
+        depth += 1;
     }
     // Then from leaf to leaf. A file has only so many pages, so a walk longer than
-    // that is going in a circle.
+    // that is following a cycle.
     let mut total = 0;
     for _ in 0..pager.page_count()? {
         let page = pager.page(n)?;
@@ -57,7 +64,7 @@ pub fn count(tree: &Tree, pager: &mut Pager) -> Result<usize> {
             return Ok(total);
         }
     }
-    Err(Error::Corrupt("the leaves link in a circle".into()))
+    Err(Error::Corrupt("the leaves link in a cycle".into()))
 }
 // @end
 
@@ -74,7 +81,9 @@ fn pack(kind: u8, cells: &[(Vec<u8>, Vec<u8>)]) -> Result<Vec<(Vec<u8>, Page)>> 
             pages.push((std::mem::take(&mut lowest), page));
             page = Page::new();
             page.init_slotted(kind);
-            page.insert_cell(0, cell)?;
+            if !page.insert_cell(0, cell)? {
+                return Err(Error::TooLarge(cell.len())); // not even on an empty page
+            }
         }
         if page.cell_count() == 1 {
             lowest = key.clone();
@@ -90,12 +99,16 @@ fn pack(kind: u8, cells: &[(Vec<u8>, Vec<u8>)]) -> Result<Vec<(Vec<u8>, Page)>> 
 /// from the leaves up.
 pub fn bulk_load(pager: &mut Pager, entries: &[(Vec<u8>, Vec<u8>)]) -> Result<Tree> {
     assert!(entries.windows(2).all(|pair| pair[0].0 < pair[1].0), "keys must ascend");
+    let mut cells = Vec::with_capacity(entries.len());
+    for (key, payload) in entries {
+        let cell = leaf_cell(key, payload);
+        if cell.len() > MAX_CELL {
+            return Err(Error::TooLarge(cell.len())); // the limit `insert` applies
+        }
+        cells.push((key.clone(), cell));
+    }
     let tree = Tree::create(pager)?;
     let mut kind = LEAF;
-    let mut cells: Vec<(Vec<u8>, Vec<u8>)> = entries
-        .iter()
-        .map(|(key, payload)| (key.clone(), leaf_cell(key, payload)))
-        .collect();
     loop {
         let mut pages = pack(kind, &cells)?;
         if pages.len() == 1 {
@@ -103,16 +116,18 @@ pub fn bulk_load(pager: &mut Pager, entries: &[(Vec<u8>, Vec<u8>)]) -> Result<Tr
             *pager.page_mut(tree.root())? = pages.remove(0).1;
             return Ok(tree);
         }
-        // The pages of a level get consecutive numbers, so each one's right-hand
-        // neighbor is known before it is allocated.
-        let first: PageNo = pager.page_count()?;
-        let last = first + pages.len() as PageNo - 1;
+        // `allocate` may hand out any free page, so each page's number is known only
+        // once it is allocated, and its left neighbor's link is set then.
         cells.clear();
-        for (key, mut page) in pages {
-            let n = first + cells.len() as PageNo;
-            page.set_right(if n < last { n + 1 } else { 0 });
-            pager.allocate(page)?;
-            cells.push((key.clone(), interior_cell(n, &key)));
+        let mut previous: Option<PageNo> = None;
+        for (key, page) in pages {
+            let n = pager.allocate(page)?;
+            if let Some(left) = previous {
+                pager.page_mut(left)?.set_right(n);
+            }
+            previous = Some(n);
+            let cell = interior_cell(n, &key);
+            cells.push((key, cell));
         }
         kind = INTERIOR;
     }

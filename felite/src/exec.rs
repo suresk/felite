@@ -114,12 +114,12 @@ impl Operator for Project {
 // @end
 
 // @listing limit
-/// Passes over the first `skip` rows of its input, hands on the next `take`, and
-/// then stops asking for more.
+/// Skips the first `skip` rows of its input, yields the next `take`, and then
+/// stops calling `next` on its input.
 pub struct Limit {
     pub input: Box<dyn Operator>,
     pub skip: usize,
-    /// How many rows are still to be handed on. `None` means all of them.
+    /// How many rows are still to be yielded. `None` means all of them.
     pub take: Option<usize>,
 }
 

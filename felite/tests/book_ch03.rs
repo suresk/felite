@@ -69,7 +69,7 @@ fn removing_a_cell() {
     let mut page = Page::new();
     page.init_slotted(1);
     for (i, city) in ["Atlanta", "Boston", "Chicago", "Denver"].iter().enumerate() {
-        page.insert_cell(i, city.as_bytes()).unwrap();
+        assert!(page.insert_cell(i, city.as_bytes()).unwrap());
     }
     let before = page.free_space().unwrap();
 
@@ -95,8 +95,8 @@ fn the_lowest_cell_leaves_no_hole() {
     // @listing remove-lowest
     let mut page = Page::new();
     page.init_slotted(1);
-    page.insert_cell(0, b"Atlanta").unwrap();
-    page.insert_cell(1, b"Boston").unwrap();
+    assert!(page.insert_cell(0, b"Atlanta").unwrap());
+    assert!(page.insert_cell(1, b"Boston").unwrap());
     page.remove_cell(1).unwrap(); // the cell written last, so the lowest in the page
     assert_eq!(page.u16_at(6), 0); // no fragmented bytes
     assert_eq!(page.u16_at(4), 4096 - 7); // cell content starts at Atlanta again
@@ -157,7 +157,7 @@ fn a_damaged_page_is_an_error() {
     // @listing damaged-page
     let mut good = Page::new();
     good.init_slotted(1);
-    good.insert_cell(0, b"Atlanta").unwrap();
+    assert!(good.insert_cell(0, b"Atlanta").unwrap());
     let message = |page: &Page| page.cell(0).unwrap_err().to_string();
 
     let mut page = good.clone();
@@ -176,5 +176,10 @@ fn a_damaged_page_is_an_error() {
     page.put_u16(4, 5); // the start of cell content
     let error = page.insert_cell(1, b"Boston").unwrap_err().to_string();
     assert_eq!(error, "corrupt database: cell content starts at byte 5");
+
+    let mut page = good.clone();
+    page.put_u16(6, 5000); // the bytes in holes, more than all the cells hold
+    let error = page.free_space().unwrap_err().to_string();
+    assert_eq!(error, "corrupt database: 5000 bytes of holes among 7 bytes of cells");
     // @end
 }

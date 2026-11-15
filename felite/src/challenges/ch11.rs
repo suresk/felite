@@ -9,6 +9,13 @@ use crate::sql::{BinaryOp, Expr, ExprKind, UnaryOp};
 pub fn columns_used(expr: &Expr) -> Vec<String> {
     fn walk(expr: &Expr, found: &mut Vec<String>) {
         match &expr.kind {
+            // @hide
+            ExprKind::Call { arg, .. } => {
+                if let Some(arg) = arg {
+                    walk(arg, found);
+                }
+            }
+            // @show
             ExprKind::Literal(_) => {}
             ExprKind::Column { name, .. } => {
                 if !found.contains(name) {
@@ -22,12 +29,6 @@ pub fn columns_used(expr: &Expr) -> Vec<String> {
                 walk(left, found);
                 walk(right, found);
             }
-            // @hide
-            ExprKind::Call { arg, .. } => {
-                if let Some(arg) = arg {
-                    walk(arg, found);
-                }
-            } // @show
         }
     }
     let mut found = Vec::new();
@@ -75,7 +76,7 @@ fn power(expr: &Expr) -> u8 {
 // @end
 
 // @listing minimal
-/// An expression as SQL with no parentheses that could be left out.
+/// An expression as SQL with no parentheses that precedence alone makes redundant.
 pub fn to_minimal_sql(expr: &Expr) -> String {
     // `inner` as text, in parentheses if it binds less tightly than `needed`.
     let child = |inner: &Expr, needed: u8| {
@@ -108,7 +109,7 @@ pub fn to_minimal_sql(expr: &Expr) -> String {
             format!("{} IS {not}NULL", child(operand, own))
         }
         // Operators group from the left, so a right-hand side of the same
-        // strength needs its parentheses and a left-hand side does not.
+        // binding power needs its parentheses and a left-hand side does not.
         ExprKind::Binary { op, left, right } => {
             format!(
                 "{} {} {}",

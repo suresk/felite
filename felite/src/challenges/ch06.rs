@@ -41,7 +41,7 @@ pub fn count_range(
         }
         n = page.right();
     }
-    Err(Error::Corrupt("the leaves link in a circle".into()))
+    Err(Error::Corrupt("the leaves link in a cycle".into()))
 }
 // @end
 

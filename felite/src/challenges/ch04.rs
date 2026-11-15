@@ -32,7 +32,7 @@ pub fn path(
             _ => return Err(Error::Corrupt(format!("page {n} is not a tree page"))),
         }
     }
-    Err(Error::Corrupt("the tree is too deep".into()))
+    Err(Error::Corrupt(format!("a tree more than {MAX_DEPTH} levels deep")))
 }
 // @end
 
@@ -40,20 +40,30 @@ pub fn path(
 /// Whether `key` is in the tree. Nothing is copied out of the leaf.
 pub fn contains(tree: &Tree, pager: &mut Pager, key: &[u8]) -> Result<bool> {
     let steps = path(tree, pager, key)?;
-    let (leaf, i) = steps[steps.len() - 1];
+    let &(leaf, i) = steps.last().expect("a path ends at a leaf");
     let page = pager.page(leaf)?;
     Ok(i < page.cell_count() && parse_leaf(page.cell(i)?)?.0 == key)
 }
 // @end
 
 // @listing ends
+/// Which side of the tree `edge_key` walks down.
+#[derive(Clone, Copy)]
+enum Edge {
+    First,
+    Last,
+}
+
 /// Walks down one edge of the tree and returns the key at the end of it.
-fn edge_key(tree: &Tree, pager: &mut Pager, last: bool) -> Result<Option<Vec<u8>>> {
+fn edge_key(tree: &Tree, pager: &mut Pager, edge: Edge) -> Result<Option<Vec<u8>>> {
     let mut n = tree.root();
     for _ in 0..MAX_DEPTH {
         let page = pager.page(n)?;
         let count = page.cell_count();
-        let i = if last { count.saturating_sub(1) } else { 0 };
+        let i = match edge {
+            Edge::First => 0,
+            Edge::Last => count.saturating_sub(1),
+        };
         match page.kind() {
             LEAF if count == 0 => return Ok(None),
             LEAF => return Ok(Some(parse_leaf(page.cell(i)?)?.0.to_vec())),
@@ -61,15 +71,15 @@ fn edge_key(tree: &Tree, pager: &mut Pager, last: bool) -> Result<Option<Vec<u8>
             _ => return Err(Error::Corrupt(format!("page {n} is not a tree page"))),
         }
     }
-    Err(Error::Corrupt("the tree is too deep".into()))
+    Err(Error::Corrupt(format!("a tree more than {MAX_DEPTH} levels deep")))
 }
 
 pub fn first_key(tree: &Tree, pager: &mut Pager) -> Result<Option<Vec<u8>>> {
-    edge_key(tree, pager, false)
+    edge_key(tree, pager, Edge::First)
 }
 
 pub fn last_key(tree: &Tree, pager: &mut Pager) -> Result<Option<Vec<u8>>> {
-    edge_key(tree, pager, true)
+    edge_key(tree, pager, Edge::Last)
 }
 // @end
 

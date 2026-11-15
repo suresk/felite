@@ -1,5 +1,5 @@
 //! Tests for the Chapter 5 challenges: `cargo test --test challenges_ch05`.
-use felite::{MemFile, Pager, Tree, interior_cell, row_key};
+use felite::{INTERIOR, MemFile, Page, Pager, Tree, interior_cell, row_key};
 
 fn new_tree() -> (Pager, Tree) {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -123,6 +123,18 @@ fn count_walks_the_leaves() {
     let (child, _) = felite::parse_interior(first.cell(0).unwrap()).unwrap();
     pager.page_mut(child).unwrap().set_right(child);
     assert!(count(&tree, &mut pager).is_err());
+
+    // So is an interior page whose first child is itself.
+    let (mut pager, tree) = new_tree();
+    let mut root = Page::new();
+    root.init_slotted(INTERIOR);
+    assert!(root.insert_cell(0, &interior_cell(tree.root(), &row_key(1))).unwrap());
+    *pager.page_mut(tree.root()).unwrap() = root;
+    let error = count(&tree, &mut pager).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "corrupt database: a tree more than 40 levels deep"
+    );
 }
 
 // @challenge 5

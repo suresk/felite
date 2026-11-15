@@ -122,7 +122,35 @@ fn files_that_are_not_ours() {
         message(&header),
         "corrupt database: its pages are 8192 bytes, not 4096"
     );
+    header[16..20].copy_from_slice(&4096u32.to_be_bytes()); // the count is still 0
+    assert_eq!(
+        message(&header),
+        "corrupt database: its page count is 0, but the header is a page itself"
+    );
     // @end
+}
+
+#[test]
+fn a_full_file() {
+    // A header that claims the most pages a u32 can count: 2^32 - 1, or 16 TiB.
+    let mut file = MemFile::new();
+    let mut header = [0; 4096];
+    header[..16].copy_from_slice(MAGIC);
+    header[16..20].copy_from_slice(&4096u32.to_be_bytes());
+    header[20..24].copy_from_slice(&u32::MAX.to_be_bytes());
+    file.write_at(0, &header).unwrap();
+    let mut pager = Pager::open(Box::new(file.clone())).unwrap();
+    let Err(error) = pager.allocate(Page::new()) else {
+        panic!("allocate went past the last page number");
+    };
+    let Error::Io(io) = &error else { panic!("expected an I/O error, got {error}") };
+    assert_eq!(io.kind(), std::io::ErrorKind::StorageFull);
+    assert_eq!(
+        error.to_string(),
+        "I/O error: the file has 4294967295 pages, the most a PageNo allows"
+    );
+    // Nothing changed: the header's count is as it was.
+    assert_eq!(pager.page_count().unwrap(), u32::MAX);
 }
 
 #[test]
@@ -173,12 +201,13 @@ fn the_header_page_as_hex() {
     pager.allocate(Page::new()).unwrap();
     pager.allocate(Page::new()).unwrap();
     pager.flush().unwrap();
-    let expected = "\
-0000  66 65 6c 69 74 65 20 66 6f 72 6d 61 74 20 31 00  |felite format 1.|
-0010  00 00 10 00 00 00 00 03 00 00 00 00 00 00 00 00  |................|
-0020  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  |................|
-*
-";
-    assert_eq!(hex_dump(&file.bytes()[..4096]), expected);
+    let expected = [
+        "0000  66 65 6c 69 74 65 20 66 6f 72 6d 61 74 20 31 00  |felite format 1.|",
+        "0010  00 00 10 00 00 00 00 03 00 00 00 00 00 00 00 00  |................|",
+        "0020  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  |................|",
+        "*",
+    ];
+    let dump = hex_dump(&file.bytes()[..4096]);
+    assert_eq!(dump.lines().collect::<Vec<_>>(), expected);
     // @end
 }

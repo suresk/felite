@@ -1,11 +1,11 @@
 //! Loads the example data set into a database file, and says how long it took:
 //! `cargo run --release --example load`. Run `cargo xtask data` first.
+// @listing load
 use felite::Database;
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Instant;
 
-// @listing load
 const SCHEMA: [&str; 3] = [
     "CREATE TABLE carriers (code TEXT NOT NULL, name TEXT NOT NULL)",
     "CREATE TABLE airports (code TEXT NOT NULL, city TEXT NOT NULL,

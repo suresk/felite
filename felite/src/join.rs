@@ -21,11 +21,18 @@ pub struct NestedLoop {
     condition: Bound,
     /// Whether to keep an outer row that no inner row matches.
     left: bool,
-    /// The outer row being worked on, the scan of the inner table for it, and
-    /// whether any inner row has matched it yet.
-    current: Option<(Row, Scan, bool)>,
+    current: Option<Current>,
     /// How many pairs of rows the condition has been tried on.
     pub pairs: u64,
+}
+
+/// The outer row a nested loop is working on.
+struct Current {
+    row: Row,
+    /// The scan of the inner table for this row.
+    scan: Scan,
+    /// Whether any inner row has matched the row yet.
+    matched: bool,
 }
 
 impl NestedLoop {
@@ -45,32 +52,32 @@ impl NestedLoop {
 impl Operator for NestedLoop {
     fn next(&mut self, pager: &mut Pager) -> Result<Option<Row>> {
         loop {
-            if self.current.is_none() {
-                let Some(row) = self.outer.next(pager)? else {
-                    return Ok(None);
-                };
-                // Start the inner table again from its first row.
-                self.current = Some((row, Scan::new(&self.inner, pager)?, false));
-            }
-            let Some((outer, scan, matched)) = &mut self.current else {
-                unreachable!()
+            let current = match &mut self.current {
+                Some(current) => current,
+                None => {
+                    let Some(row) = self.outer.next(pager)? else {
+                        return Ok(None);
+                    };
+                    // Start the inner table again from its first row.
+                    let scan = Scan::new(&self.inner, pager)?;
+                    self.current.insert(Current { row, scan, matched: false })
+                }
             };
-            while let Some(inner) = scan.next(pager)? {
-                let mut pair = outer.clone();
+            while let Some(inner) = current.scan.next(pager)? {
+                let mut pair = current.row.clone();
                 pair.extend(inner);
                 self.pairs += 1;
                 if truth(&eval(&self.condition, &pair)?) == Some(true) {
-                    *matched = true;
+                    current.matched = true;
                     return Ok(Some(pair));
                 }
             }
             // The inner table is used up for this outer row.
-            let Some((mut outer, _, matched)) = self.current.take() else {
-                unreachable!()
-            };
+            let Current { mut row, matched, .. } =
+                self.current.take().expect("an outer row is in progress");
             if self.left && !matched {
-                outer.resize(outer.len() + self.inner.columns.len(), Value::Null);
-                return Ok(Some(outer));
+                row.resize(row.len() + self.inner.columns.len(), Value::Null);
+                return Ok(Some(row));
             }
         }
     }
@@ -83,18 +90,18 @@ impl Operator for NestedLoop {
 pub struct HashJoin {
     outer: Box<dyn Operator>,
     inner: Box<dyn Operator>,
-    /// The key of an outer row, worked out from that row alone.
+    /// The key of an outer row, evaluated over that row alone.
     outer_key: Bound,
-    /// The key of an inner row, worked out from that row alone.
+    /// The key of an inner row, evaluated over that row alone.
     inner_key: Bound,
     /// How many values an inner row has.
     inner_width: usize,
     left: bool,
     /// The inner rows under their keys, once the inner input has been read.
-    table: Option<HashMap<Vec<u8>, Vec<Row>>>,
-    /// Joined rows that are ready to hand on, with the first one last.
+    hash_table: Option<HashMap<Vec<u8>, Vec<Row>>>,
+    /// Joined rows that are ready to yield, with the first one last.
     ready: Vec<Row>,
-    /// How many inner rows went into the table.
+    /// How many inner rows went into the hash table.
     pub built: u64,
     /// How many outer rows were looked up in it.
     pub probes: u64,
@@ -103,7 +110,7 @@ pub struct HashJoin {
 
 // @listing hash-key
 /// A value as a hash table key: its bytes as a record. `None` for NULL, which
-/// matches nothing and so is never put in the table or looked up.
+/// matches nothing and so is never put in the hash table or looked up.
 fn hash_key(key: &Bound, row: &Row) -> Result<Option<Vec<u8>>> {
     Ok(match eval(key, row)? {
         Value::Null => None,
@@ -128,7 +135,7 @@ impl HashJoin {
             inner_key: keys.1,
             inner_width,
             left,
-            table: None,
+            hash_table: None,
             ready: Vec::new(),
             built: 0,
             probes: 0,
@@ -137,14 +144,14 @@ impl HashJoin {
 
     /// Reads the whole inner input into a hash table.
     fn build(&mut self, pager: &mut Pager) -> Result<HashMap<Vec<u8>, Vec<Row>>> {
-        let mut table: HashMap<Vec<u8>, Vec<Row>> = HashMap::new();
+        let mut hash_table: HashMap<Vec<u8>, Vec<Row>> = HashMap::new();
         while let Some(row) = self.inner.next(pager)? {
             if let Some(key) = hash_key(&self.inner_key, &row)? {
-                table.entry(key).or_default().push(row);
+                hash_table.entry(key).or_default().push(row);
                 self.built += 1;
             }
         }
-        Ok(table)
+        Ok(hash_table)
     }
     // @end
 }
@@ -152,10 +159,13 @@ impl HashJoin {
 // @listing hash-join-next
 impl Operator for HashJoin {
     fn next(&mut self, pager: &mut Pager) -> Result<Option<Row>> {
-        if self.table.is_none() {
-            self.table = Some(self.build(pager)?);
-        }
-        let Some(table) = &self.table else { unreachable!() };
+        let hash_table = match &self.hash_table {
+            Some(hash_table) => hash_table,
+            None => {
+                let built = self.build(pager)?;
+                self.hash_table.insert(built)
+            }
+        };
         loop {
             if let Some(row) = self.ready.pop() {
                 return Ok(Some(row));
@@ -165,7 +175,7 @@ impl Operator for HashJoin {
             };
             self.probes += 1;
             let matches = match hash_key(&self.outer_key, &outer)? {
-                Some(key) => table.get(&key),
+                Some(key) => hash_table.get(&key),
                 None => None,
             };
             match matches {

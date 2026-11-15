@@ -62,6 +62,8 @@ pub(crate) fn take<'a>(rest: &mut &'a [u8], n: u64) -> Result<&'a [u8]> {
 // @end
 
 // @listing decode
+/// The values of a record. A record that is cut short, has bytes left over or
+/// holds lengths that do not add up is `Error::Corrupt`, and no input panics.
 pub fn decode(bytes: &[u8]) -> Result<Vec<Value>> {
     let mut rest = bytes;
     let count = read_varint(&mut rest)?;
@@ -88,6 +90,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Value>> {
 // @end
 
 // @listing decode-value
+/// One value: the body for type code `code`, taken from the front of `rest`.
 pub(crate) fn decode_value(code: u64, rest: &mut &[u8]) -> Result<Value> {
     Ok(match code {
         0 => Value::Null,
@@ -100,12 +103,9 @@ pub(crate) fn decode_value(code: u64, rest: &mut &[u8]) -> Result<Value> {
         }
         n => {
             let bytes = take(rest, n - 3)?;
-            match std::str::from_utf8(bytes) {
-                Ok(s) => Value::Text(s.to_string()),
-                Err(_) => {
-                    return Err(Error::Corrupt("text that is not UTF-8".into()));
-                }
-            }
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| Error::Corrupt("text that is not UTF-8".into()))?;
+            Value::Text(text.to_string())
         }
     })
 }

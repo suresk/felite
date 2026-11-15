@@ -176,6 +176,8 @@ fn comparisons() {
     assert_eq!(value("delay <> 15"), no);
     assert_eq!(value("delay < miles"), yes); // an integer against a real
     assert_eq!(value("1 = 1.0"), yes);
+    assert_eq!(value("0.0 = -0.0"), yes); // the two zeros are equal
+    assert_eq!(value("-0.0 < 0.0"), no);
     assert_eq!(value("origin = 'SLC'"), yes);
     assert_eq!(value("origin = 'slc'"), no); // text is compared exactly
     assert_eq!(value("'SLC' < 'SLD'"), yes);

@@ -4,7 +4,8 @@
 //! The tests are the ones in `felite/tests`. By default they run against the crate in
 //! this repository. With `--crate <dir>` (or the `FELITE_CRATE` environment variable)
 //! they run against the crate in that directory, which is how you check your own
-//! code against them without copying anything into it.
+//! code against them without copying anything into it. The directory can be the
+//! crate's, or a workspace that has the crate in `felite/`, as the book sets it up.
 //!
 //! How it works: a small package is written to `target/check`. Its only dependency
 //! is the crate being checked, under the name `felite`, and its `tests/` directory
@@ -121,6 +122,14 @@ fn check(which: Which, dir: Option<PathBuf>) -> Result<bool, String> {
     let dir = dir.unwrap_or_else(|| Path::new(ROOT).join("felite"));
     let dir =
         std::path::absolute(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    // A workspace like the book's, `felite-workspace/` with the crate in `felite/`, will
+    // do: its Cargo.toml has no [package], so look for the crate inside it.
+    let dir = match dir.join("felite/Cargo.toml").is_file()
+        && package_name(&dir).is_err()
+    {
+        true => dir.join("felite"),
+        false => dir,
+    };
     let package = package_name(&dir)?;
     let scratch = Path::new(ROOT).join("target").join("check");
     write_package(&scratch, &dir, &package, &targets)
@@ -129,7 +138,10 @@ fn check(which: Which, dir: Option<PathBuf>) -> Result<bool, String> {
     if reference {
         println!("Checking the reference crate (--crate <dir> checks yours).\n");
     } else {
-        println!("Checking {}.\n", dir.display());
+        // Without the `..`s of a relative path. Only for the message: Cargo is given
+        // `dir` itself, because on Windows a canonical path has a prefix it dislikes.
+        let shown = fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        println!("Checking {}.\n", shown.display());
     }
 
     // Build every test binary that can be built, in parallel. The library is built

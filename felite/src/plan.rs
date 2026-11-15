@@ -11,16 +11,18 @@ use crate::exec::{Filter, Limit, Operator, Project, Row, Scan};
 use crate::index::{Index, IndexScan};
 use crate::join::{HashJoin, NestedLoop, equi_keys, table_scope};
 use crate::keys::{after, encode_key};
+use crate::page::PAGE_SIZE;
 use crate::pager::Pager;
 use crate::query::{ResultSet, key_expr, order_keys, select_list};
 use crate::record::Value;
+use crate::slotted::SLOTTED_HEADER;
 use crate::sort::{Sort, SortKey};
 use crate::sql::UnaryOp;
 use crate::sql::{BinaryOp, ColumnType, Expr, ExprKind, OrderKey, Select, Span};
 
 // @listing plan
-/// A way to run a query, as a tree. Each node says what one operator will do,
-/// and carries what is needed to build it.
+/// A way to run a query, as a tree. Each node describes one operator and
+/// carries what is needed to build it.
 #[derive(Debug, Clone)]
 pub enum Plan {
     /// Every row of a table, in order of row id.
@@ -105,7 +107,7 @@ fn column(position: usize) -> Bound {
 // @end
 
 // @listing row-lookup
-/// Hands on the row of a table with one id, if the table has it.
+/// Yields the row of a table with one id, if the table has it.
 pub struct RowLookup {
     table: Table,
     /// The id to look for. `None` once it has been looked for.
@@ -255,17 +257,40 @@ fn take_bindable(pool: &mut Vec<Expr>, scope: &Scope) -> Vec<Expr> {
 
 impl Tree {
     // @listing estimate
-    /// A guess at how many entries the tree holds, from the pages on the way to
-    /// its first leaf: the product of how many cells each of them has.
+    /// A guess at how many entries the tree holds, from the pages on one path
+    /// from the root to a leaf: the product of how many cells each of them has.
+    /// The path takes the first child of each page, unless the leaf it reaches
+    /// is less than half full, as deletes from the front of a table leave it:
+    /// pages merge only below a quarter (Section 7.3). Then it takes the middle
+    /// child of each page instead.
     pub fn estimate(&self, pager: &mut Pager) -> Result<u64> {
-        let (mut n, mut rows) = (self.root(), 1);
+        let (rows, thin) = self.estimate_along(pager, |_| 0)?;
+        if !thin {
+            return Ok(rows);
+        }
+        Ok(self.estimate_along(pager, |cells| cells / 2)?.0)
+    }
+
+    /// The product of the cell counts on the path that `child` picks, and
+    /// whether the path ends in a leaf, other than the root, that is less than
+    /// half full.
+    fn estimate_along(
+        &self,
+        pager: &mut Pager,
+        child: impl Fn(usize) -> usize,
+    ) -> Result<(u64, bool)> {
+        let (mut n, mut rows) = (self.root(), 1u64);
         for _ in 0..=pager.page_count()? {
             let page = pager.page(n)?;
-            rows *= page.cell_count() as u64;
-            if page.kind() != INTERIOR || page.cell_count() == 0 {
-                return Ok(rows);
+            let cells = page.cell_count();
+            // The counts come from the file: the product must not overflow.
+            rows = rows.saturating_mul(cells as u64);
+            if page.kind() != INTERIOR || cells == 0 {
+                let usable = PAGE_SIZE - SLOTTED_HEADER;
+                let thin = n != self.root() && page.free_space()? > usable / 2;
+                return Ok((rows, thin));
             }
-            n = parse_interior(page.cell(0)?)?.0;
+            n = parse_interior(page.cell(child(cells))?)?.0;
         }
         Err(Error::Corrupt("a tree deeper than the file has pages".to_string()))
     }
@@ -457,7 +482,9 @@ pub struct Ordering {
     /// Whether there is one row at most, which is in every order at once.
     pub single: bool,
 }
+// @end
 
+// @listing shaped
 /// A plan for everything up to the grouping, if there is one, with what the
 /// rest of the query is built from.
 struct Shaped {
@@ -506,13 +533,12 @@ fn guess(table_rows: u64, fraction: f64) -> u64 {
 /// The row id, if a condition gives it. Failing that, the index that is guessed
 /// to select the least, if that is little enough. Failing that, a scan.
 fn choose(
-    table: &Table,
+    table: Table,
     name: String,
     tests: &[Option<Test>],
     conditions: &[Expr],
     rows: u64,
 ) -> Choice {
-    let table = table.clone();
     let key = table.key_column;
     let by_id = tests.iter().enumerate().find_map(|(at, test)| match test {
         Some(Test { position, op: BinaryOp::Equal, value: Value::Integer(id) })
@@ -613,6 +639,31 @@ fn arrange(plan: Plan, placed: &[(usize, usize)]) -> Plan {
 }
 // @end
 
+// @listing qualify
+/// Gives every column of a condition the name of its table, as `scope` resolves
+/// it. A name that is unique among the tables written so far may belong to a
+/// different table among the tables of another join order.
+fn qualify(expr: &mut Expr, scope: &Scope) {
+    if let ExprKind::Column { table: None, .. } = &expr.kind
+        && let Ok(Bound { kind: BoundKind::Column(at), .. }) = bind(expr, scope)
+        && let ExprKind::Column { table, .. } = &mut expr.kind
+    {
+        *table = Some(scope.columns[at].table.clone());
+    }
+    match &mut expr.kind {
+        ExprKind::Unary { operand, .. } | ExprKind::IsNull { operand, .. } => {
+            qualify(operand, scope)
+        }
+        ExprKind::Binary { left, right, .. } => {
+            qualify(left, scope);
+            qualify(right, scope);
+        }
+        ExprKind::Call { arg: Some(arg), .. } => qualify(arg, scope),
+        _ => {}
+    }
+}
+// @end
+
 impl Database {
     // @listing access
     /// Chooses how to read one table, given the conditions that mention it alone.
@@ -629,7 +680,7 @@ impl Database {
         let tests: Vec<Option<Test>> =
             conditions.iter().map(|c| as_test(c, table, &scope)).collect();
         let Choice { mut plan, used, mut fraction, sorted_by } =
-            choose(table, name, &tests, &conditions, table_rows);
+            choose(table.clone(), name, &tests, &conditions, table_rows);
         let single = matches!(plan, Plan::RowId { .. });
         // The conditions that the choice did not take care of are filters.
         for (at, condition) in conditions.iter().enumerate() {
@@ -708,7 +759,9 @@ impl Database {
             tables.push((table.clone(), join.alias.clone(), so_far.columns.len()));
             so_far.columns.extend(table_scope(&table, &join.alias).columns);
             bind_condition(&join.on, &so_far, "ON")?;
-            conjuncts(&join.on, &mut pool);
+            let mut on = join.on.clone();
+            qualify(&mut on, &so_far);
+            conjuncts(&on, &mut pool);
         }
         if let Some(filter) = &select.filter {
             bind_condition(filter, &scope, "WHERE")?;
@@ -880,6 +933,10 @@ impl Database {
 
     /// The plan for a SELECT, as rows of one column for the prompt to print.
     pub(crate) fn explain(&mut self, select: &Select) -> Result<Output> {
+        // @hide
+        let resolved = self.order_positions(select)?;
+        let select = &*resolved;
+        // @show
         let (plan, _) = self.plan_select(select)?;
         let rows =
             plan.explain().into_iter().map(|line| vec![Value::Text(line)]).collect();

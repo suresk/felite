@@ -17,7 +17,7 @@ impl Database {
     pub(crate) fn matching(
         &mut self,
         table: &Table,
-        filter: &Option<Expr>,
+        filter: Option<&Expr>,
     ) -> Result<Vec<(i64, Row)>> {
         let condition = match filter {
             Some(filter) => Some(bind_condition(filter, &Scope::of(table), "WHERE")?),
@@ -41,7 +41,7 @@ impl Database {
     // @listing delete
     pub(crate) fn delete(&mut self, delete: &Delete) -> Result<Output> {
         let table = self.table(&delete.table)?.clone();
-        let doomed = self.matching(&table, &delete.filter)?;
+        let doomed = self.matching(&table, delete.filter.as_ref())?;
         // @hide
         for (id, row) in &doomed {
             table.unindex_row(&mut self.pager, *id, row)?;
@@ -131,7 +131,7 @@ impl Database {
     pub(crate) fn update(&mut self, update: &Update) -> Result<Output> {
         let table = self.table(&update.table)?.clone();
         let sets = assignments(&table, update)?;
-        let old = self.matching(&table, &update.filter)?;
+        let old = self.matching(&table, update.filter.as_ref())?;
         // Work out every new row before changing any, so that a row which cannot
         // be computed stops the statement while the table is still untouched.
         let mut new = Vec::with_capacity(old.len());

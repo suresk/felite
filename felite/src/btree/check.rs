@@ -153,9 +153,10 @@ impl Checker {
             // The child's keys run from this cell's key up to the next cell's. The
             // first key is never compared, so the first child inherits `low`.
             let from = if i == 0 { low } else { Some(key) };
-            let to = match i + 1 < count {
-                true => Some(parse_interior(page.cell(i + 1)?)?.1),
-                false => high,
+            let to = if i + 1 < count {
+                Some(parse_interior(page.cell(i + 1)?)?.1)
+            } else {
+                high
             };
             if i > 0 && (!in_range(key, low, high) || to.is_some_and(|t| key >= t)) {
                 return bad(n, &format!("the key in cell {i} is out of order"));

@@ -47,7 +47,7 @@ fn extents(page: &Page) -> Result<Vec<(usize, usize)>> {
 // @end
 
 // @listing check-slotted
-/// Checks everything a slotted page promises about itself.
+/// Checks every invariant of a slotted page.
 pub fn check_slotted(page: &Page) -> Result<()> {
     page.free_space()?; // checks the cell count and the start of cell content
     let mut at = page.u16_at(CONTENT_AT) as usize;
@@ -100,13 +100,18 @@ pub fn insert_cell_reusing(page: &mut Page, i: usize, cell: &[u8]) -> Result<boo
         at = end;
     }
     let Some(start) = hole else { return page.insert_cell(i, cell) };
+    let counted = page.u16_at(FRAGMENTED_AT) as usize;
+    let Some(fragmented) = counted.checked_sub(cell.len()) else {
+        let what =
+            format!("a {}-byte hole, and the header counts {counted}", cell.len());
+        return Err(Error::Corrupt(what));
+    };
     page.bytes_mut()[start..start + cell.len()].copy_from_slice(cell);
     let slot = SLOTTED_HEADER + SLOT_SIZE * i;
     page.bytes_mut().copy_within(slot..slots_end, slot + SLOT_SIZE);
     page.put_u16(slot, start as u16);
     page.put_u16(slot + 2, cell.len() as u16);
     page.put_u16(COUNT_AT, count as u16 + 1);
-    let fragmented = page.u16_at(FRAGMENTED_AT) as usize - cell.len();
     page.put_u16(FRAGMENTED_AT, fragmented as u16);
     Ok(true)
 }

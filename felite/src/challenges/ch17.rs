@@ -44,8 +44,8 @@ pub fn page_delta(old: &Page, new: &Page) -> Vec<u8> {
             at += 1;
             continue;
         }
-        // A run goes on until eight bytes in a row are the same in both versions,
-        // because a new run costs four bytes of its own.
+        // A run goes on until eight bytes in a row are the same in both versions.
+        // A new run costs four bytes of its own, so four would be the break-even.
         let mut end = at + 1;
         let mut same = 0;
         while end < PAGE_SIZE && same < 8 {

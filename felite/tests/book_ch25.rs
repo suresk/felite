@@ -93,6 +93,31 @@ fn importing() {
     );
     // The prompt has a command for it.
     assert!(respond(&mut db, ".import nowhere.csv stops").starts_with("error: "));
+    assert_eq!(respond(&mut db, ".import"), "usage: .import FILE TABLE\n");
+    // @end
+}
+
+#[test]
+fn importing_inside_a_transaction() {
+    // @listing import-transaction-test
+    let mut db = open(MemFile::new(), MemFile::new());
+    db.execute("CREATE TABLE t (n INTEGER, word TEXT)").unwrap();
+    db.execute("BEGIN").unwrap();
+    db.execute("INSERT INTO t VALUES (0, 'mine')").unwrap();
+    // The import's batches would end the open transaction, so it refuses to
+    // start, at the prompt as in code.
+    let refusal =
+        "an import can't run inside a transaction: COMMIT or ROLLBACK first";
+    let error = db.import("t", &mut rows(5).as_bytes()).unwrap_err();
+    assert_eq!(error.to_string(), refusal);
+    let csv = std::env::temp_dir().join("felite-ch25-five.csv");
+    std::fs::write(&csv, rows(5)).unwrap();
+    let command = format!(".import {} t", csv.display());
+    assert_eq!(respond(&mut db, &command), format!("error: {refusal}\n"));
+    // The transaction is still open, with its row.
+    db.execute("INSERT INTO t VALUES (1, 'also mine')").unwrap();
+    db.execute("COMMIT").unwrap();
+    assert_eq!(query(&mut db, "SELECT * FROM t"), ["0 mine", "1 also mine"]);
     // @end
 }
 
@@ -122,6 +147,12 @@ fn importing_in_batches() {
     let bad = rows(22_000) + "oops,row\n" + &rows(5);
     assert!(db.import("t", &mut bad.as_bytes()).is_err());
     assert_eq!(query(&mut db, "SELECT COUNT(*) FROM t"), ["20000"]);
+    // A full batch commits before the next row is read, so a bad row right
+    // after it takes nothing back.
+    db.execute("DELETE FROM t").unwrap();
+    let bad = rows(20_000) + "oops,row\n";
+    assert!(db.import("t", &mut bad.as_bytes()).is_err());
+    assert_eq!(query(&mut db, "SELECT COUNT(*) FROM t"), ["20000"]);
     // @end
 }
 
@@ -140,7 +171,7 @@ fn a_crash_during_an_import() {
         disk.writes() - before
     };
     let mut seen = Vec::new();
-    for stop in (1..writes).step_by(writes as usize / 16) {
+    for stop in (0..16).map(|i| 1 + i * writes / 16) {
         let disk = CrashDisk::new();
         let log = disk.another_file();
         let mut db = open(disk.clone(), log.clone());
@@ -242,6 +273,33 @@ fn somebody_elses_tests() {
             (52, "expected the end of the statement, found BETWEEN"),
             (24, "there is no function named EXISTS"),
         ]
+    );
+    // @end
+}
+
+#[test]
+fn ordering_by_position() {
+    // @listing position-test
+    let (mut db, _) = fixture();
+    // A whole number in ORDER BY is a position in the result, and a star
+    // stands for all of the table's columns.
+    assert_eq!(
+        query(&mut db, "SELECT code, city FROM airports ORDER BY 2 DESC LIMIT 2"),
+        ["YUM Yuma", "YAK Yakutat"]
+    );
+    assert_eq!(
+        query(&mut db, "SELECT * FROM carriers ORDER BY 2 LIMIT 2"),
+        ["AS Alaska Airlines Inc.", "G4 Allegiant Air"]
+    );
+    // A position outside the result is an error, and not a sort by a constant.
+    let error = |db: &mut Database, sql| db.execute(sql).unwrap_err().to_string();
+    assert_eq!(
+        error(&mut db, "SELECT code FROM airports ORDER BY 0"),
+        "error at line 1, column 36: the result has no column 0 to order by"
+    );
+    assert_eq!(
+        error(&mut db, "SELECT * FROM carriers ORDER BY 99"),
+        "error at line 1, column 33: the result has no column 99 to order by"
     );
     // @end
 }

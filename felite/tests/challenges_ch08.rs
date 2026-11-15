@@ -8,8 +8,11 @@ fn text(length: usize, seed: usize) -> Vec<u8> {
 // @challenge 2
 use felite::load_range;
 
-// @challenge 3 4
-use felite::{account_rows, update_row};
+// @challenge 3
+use felite::update_row;
+
+// @challenge 4
+use felite::account_rows;
 
 // @challenge 1
 #[test]
@@ -63,7 +66,7 @@ fn part_of_a_large_row() {
     assert_eq!(load_range(&mut pager, &short, 400, 50).unwrap(), b"");
 }
 
-// @challenge 3 4
+// @challenge 3
 #[test]
 fn replacing_a_row() {
     let mut pager = Pager::open(Box::new(MemFile::new())).unwrap();
@@ -78,7 +81,6 @@ fn replacing_a_row() {
     assert_eq!(table.get_row(&mut pager, 1).unwrap().unwrap(), text(30_000, 5));
     assert_eq!(table.get_row(&mut pager, 2).unwrap().unwrap(), b"now short");
     assert_eq!(table.get(&mut pager, &row_key(3)).unwrap(), None);
-    account_rows(&mut pager, &[table]).unwrap();
     // One long row before and one after, so the file grew only while both existed.
     assert_eq!(pager.page_count().unwrap(), pages + 8);
     assert_eq!(pager.free_count().unwrap(), 8);
@@ -86,7 +88,8 @@ fn replacing_a_row() {
     // Long to longer and back: the pages go round through the free list.
     assert!(update_row(&table, &mut pager, 1, &text(60_000, 1)).unwrap());
     assert!(update_row(&table, &mut pager, 1, &text(30_000, 2)).unwrap());
-    account_rows(&mut pager, &[table]).unwrap();
+    assert_eq!(table.get_row(&mut pager, 1).unwrap().unwrap(), text(30_000, 2));
+    assert_eq!(pager.free_count().unwrap(), pager.page_count().unwrap() - pages);
 }
 
 // @challenge 4

@@ -17,7 +17,7 @@ pub struct CrashDisk(Rc<RefCell<Disk>>);
 struct Disk {
     /// What the program sees when it reads: every write made so far.
     cache: Vec<u8>,
-    /// What had reached the disk itself at the last sync.
+    /// What was on stable storage as of the last sync.
     durable: Vec<u8>,
     /// The writes made since the last sync, oldest first.
     pending: Vec<(u64, Vec<u8>)>,
@@ -131,9 +131,9 @@ impl Storage for CrashDisk {
 
 // @listing crash-fate
 /// What became of one unsynced write when the power failed.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fate {
-    /// All of it reached the disk.
+    /// All of it reached stable storage.
     Kept,
     /// None of it did.
     Lost,

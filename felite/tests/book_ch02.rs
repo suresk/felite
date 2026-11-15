@@ -45,11 +45,11 @@ fn bad_varints_are_errors() {
         "corrupt database: a varint runs past the end of its bytes"
     );
     assert_eq!(
-        message(&[0x82]), // the top bit promises another byte
+        message(&[0x82]), // continuation bit set, but no byte follows
         "corrupt database: a varint runs past the end of its bytes"
     );
     assert_eq!(
-        message(&[0xff; 11]), // eleven bytes would be 77 bits
+        message(&[0xff; 11]), // nine groups of ones are 63 bits; a tenth makes 70
         "corrupt database: a varint does not fit in 64 bits"
     );
     // @end
@@ -90,7 +90,6 @@ fn the_bytes_of_a_row() {
         "0000  04 01 06 02 00 02 41 64 61 40 42 40 00 00 00 00  |......Ada@B@....|\n\
          0010  00                                               |.|\n"
     );
-    assert_eq!(decode(&bytes).unwrap(), row);
     // @end
 }
 
@@ -145,10 +144,10 @@ fn damaged_records_are_errors() {
     for len in 0..good.len() {
         assert!(matches!(decode(&good[..len]), Err(Error::Corrupt(_))));
     }
-    // One byte too many.
+    // Two bytes too many.
     let mut long = good.clone();
-    long.push(0);
-    assert_eq!(message(&long), "corrupt database: 1 bytes after the last value");
+    long.extend_from_slice(&[0, 0]);
+    assert_eq!(message(&long), "corrupt database: 2 bytes after the last value");
     // A count far larger than the bytes that follow.
     assert_eq!(
         message(&[0xff, 0xff, 0x7f, 0, 0]),

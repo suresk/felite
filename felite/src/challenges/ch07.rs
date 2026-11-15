@@ -39,12 +39,12 @@ pub fn free_pages(pager: &mut Pager) -> Result<Vec<PageNo>> {
     let mut n = pager.page(0)?.u32_at(24);
     while n != 0 {
         if pages.len() as u32 >= pager.page_count()? {
-            return Err(Error::Corrupt("the free list links in a circle".into()));
+            return Err(Error::Corrupt("the free list links in a cycle".into()));
         }
         let page = pager.page(n)?;
         if page.kind() != FREE {
             return Err(Error::Corrupt(format!(
-                "page {n} is on the free list in use"
+                "page {n} is on the free list and is not free"
             )));
         }
         pages.push(n);

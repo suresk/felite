@@ -156,3 +156,28 @@ fn rebuilding_a_tree() {
     account(&mut pager, &[tree]).unwrap();
     assert_eq!(pager.free_count().unwrap(), 243); // pages the rebuilt tree does not need
 }
+
+// @challenge 4
+// Rebuilding with Challenge 5.5's `bulk_load`, which must use the page numbers
+// `allocate` returns once they can come from the free list.
+use felite::bulk_load;
+
+#[test]
+fn bulk_load_uses_the_pages_it_is_given() {
+    let (mut pager, old) = new_tree();
+    for id in 0..100 {
+        add(&old, &mut pager, id, 300);
+    }
+    old.destroy(&mut pager).unwrap();
+    assert_eq!(pager.free_count().unwrap(), 9);
+    let entries: Vec<(Vec<u8>, Vec<u8>)> =
+        (0..400i64).map(|id| (row_key(id).to_vec(), vec![id as u8; 300])).collect();
+    let tree = bulk_load(&mut pager, &entries).unwrap();
+    assert_eq!(tree.check(&mut pager).unwrap().entries, 400);
+    assert_eq!(tree.get(&mut pager, &row_key(399)).unwrap().unwrap(), [143; 300]);
+
+    // An entry longer than `insert` accepts is refused, as `insert` refuses it.
+    let big = [(row_key(1).to_vec(), vec![0; 2000])];
+    let error = bulk_load(&mut pager, &big).unwrap_err();
+    assert!(matches!(error, felite::Error::TooLarge(2009)), "{error:?}");
+}

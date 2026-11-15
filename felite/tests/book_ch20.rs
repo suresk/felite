@@ -1,5 +1,5 @@
 //! The examples in Chapter 20: `cargo test --test book_ch20`.
-use felite::{Database, Limit, MemFile, Operator, Output, Row, Scan, Scope, Value};
+use felite::{Database, MemFile, Operator, Output, Row, Scan, Scope, Value};
 use felite::{SORT_BUDGET, Sort, SortKey, SortStats, Statement, TempSpace};
 use felite::{bind, order, parse, parse_expr};
 use std::cmp::{Ordering, Reverse};
@@ -334,14 +334,15 @@ fn the_budget_does_not_change_the_answer() {
 #[test]
 fn temporary_files() {
     // @listing temp-test
+    // The process id keeps two runs of the tests at once from sharing files.
+    let name = format!("felite-ch20-{}.db", std::process::id());
     let dir = std::env::temp_dir();
-    let path = dir.join("felite-ch20.db").to_str().unwrap().to_string();
+    let path = dir.join(&name).to_str().unwrap().to_string();
     // How many temporary files there are beside the database.
     let beside = || {
         let names = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name());
-        names
-            .filter(|n| n.to_string_lossy().starts_with("felite-ch20.db-temp"))
-            .count()
+        let prefix = format!("{name}-temp");
+        names.filter(|n| n.to_string_lossy().starts_with(&prefix)).count()
     };
     let before = beside();
 
@@ -379,6 +380,10 @@ fn temporary_files() {
     );
     assert_eq!(beside(), before);
     // @end
+    drop(db);
+    for old in [path.clone(), format!("{path}-log")] {
+        let _ = std::fs::remove_file(old);
+    }
 }
 
 #[test]
@@ -434,17 +439,6 @@ fn limit_stops_asking() {
     // With a sort underneath, the limit saves nothing.
     assert_eq!(reads("SELECT id FROM flights ORDER BY delay LIMIT 3"), (3, 5));
     // @end
-
-    // The operator, by hand: it never asks for a row it will not hand on.
-    let (mut db, _) = fixture();
-    let table = db.table("flights").unwrap().clone();
-    let scan = Scan::new(&table, db.pager()).unwrap();
-    let mut limit = Limit { input: Box::new(scan), skip: 198, take: Some(5) };
-    let mut rows = 0;
-    while limit.next(db.pager()).unwrap().is_some() {
-        rows += 1;
-    }
-    assert_eq!(rows, 2);
 }
 
 #[test]

@@ -86,6 +86,11 @@ impl Database {
     /// table. If the first record is the names of the table's columns, it is
     /// passed over. Returns the number of rows inserted.
     pub fn import(&mut self, table: &str, input: &mut impl BufRead) -> Result<usize> {
+        // Each batch is a transaction of its own, and transactions don't nest.
+        if self.transaction != Transaction::Closed {
+            let what = "an import can't run inside a transaction: COMMIT or ROLLBACK";
+            return sql_error(format!("{what} first"));
+        }
         let imported = self.import_rows(table, input);
         // A failure partway through a batch takes the whole batch back.
         if imported.is_err() && self.transaction == Transaction::Open {
@@ -122,17 +127,18 @@ impl Database {
                 values.push(value_of(field, column.kind, &column.name)?);
             }
             // Each batch of rows is one transaction: one sync, and all of the
-            // batch or none of it if the program stops.
+            // batch or none of it if the program stops. A full batch commits
+            // at once, so a bad row that follows it can't take it back.
             if logged && rows % IMPORT_BATCH == 0 {
-                if rows > 0 {
-                    self.execute("COMMIT")?;
-                }
                 self.execute("BEGIN")?;
             }
             self.insert(&insert_of(&table, values))?;
             rows += 1;
+            if logged && rows % IMPORT_BATCH == 0 {
+                self.execute("COMMIT")?;
+            }
         }
-        if logged && rows > 0 {
+        if logged && rows % IMPORT_BATCH != 0 {
             self.execute("COMMIT")?;
         } else if !logged {
             self.pager.flush()?;

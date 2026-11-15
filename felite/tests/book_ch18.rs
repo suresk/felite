@@ -1,5 +1,5 @@
 //! The examples in Chapter 18: `cargo test --test book_ch18`.
-use felite::{CrashDisk, Database, MemFile, Output, Pager, Storage, Value};
+use felite::{CrashDisk, Database, Fate, MemFile, Output, Pager, Storage, Value};
 use felite::{FRAME_SIZE, LOG_HEADER};
 
 /// A small random number generator (xorshift), the same on every run.
@@ -163,9 +163,10 @@ fn a_checkpoint() {
     let before = (disk.writes(), disk.syncs());
 
     assert_eq!(db.pager().checkpoint().unwrap(), 7);
-    // Seven pages written to the database file and a new header to the log, with
-    // one sync for each file.
-    assert_eq!((disk.writes() - before.0, disk.syncs() - before.1), (8, 2));
+    // Seven pages written to the database file and a new header to the log. The
+    // log is synced before the copying and after the header, the database file
+    // once in between.
+    assert_eq!((disk.writes() - before.0, disk.syncs() - before.1), (8, 3));
     assert_eq!(disk.size().unwrap(), 7 * 4096);
     assert_eq!(db.pager().log_frames(), 0);
     assert_eq!(total(&mut db), 61_500);
@@ -181,7 +182,7 @@ fn a_checkpoint() {
     let bytes = log.kill().bytes();
     assert_eq!(bytes.len(), 24 + 616 * 4112);
     assert_eq!(bytes[12..16], [0, 0, 0, 2]);
-    // Frame 5 of the old log is still there, and nobody will ever believe it.
+    // The old frames are still there, and fail the chain from the new header.
     let mut db = open(disk.kill(), log.kill());
     assert_eq!(db.pager().log_frames(), 0);
 
@@ -197,14 +198,14 @@ fn old_frames_after_new_ones() {
     // @listing stale-test
     let (mut db, disk, log) = bank();
     db.pager().checkpoint().unwrap();
-    // Two frames of the next statement reach the log, and then the power fails.
+    // Two frames of the next statement reach the log, and the program is killed.
     disk.stop_after(2);
     assert!(db.execute(BONUS).is_err());
     let after = log.kill().bytes();
     assert_eq!(after.len(), 24 + 612 * 4112);
 
     // The file holds two new frames followed by 610 old ones, every one of them
-    // well formed. Recovery believes none of them.
+    // well formed. Recovery accepts none of them.
     let mut db = open(disk.kill(), log.kill());
     assert_eq!(db.pager().log_frames(), 0);
     assert_eq!(total(&mut db), 60_000);
@@ -226,6 +227,48 @@ fn crashing_in_a_checkpoint() {
             // And the checkpoint can simply be done again.
             db.pager().checkpoint().unwrap();
             assert_eq!(total(&mut db), 61_500);
+        }
+    }
+    // @end
+}
+
+// @listing left-by-kill
+/// Puts `file` on `onto` as a killed program leaves it for the next program on
+/// the same machine: what was synced is synced, and the rest is one write that
+/// is still waiting for a sync.
+fn left_by_kill(file: &CrashDisk, onto: &mut CrashDisk) {
+    onto.write_at(0, &file.crash(|_| Fate::Lost).bytes()).unwrap();
+    onto.sync().unwrap();
+    onto.write_at(0, &file.kill().bytes()).unwrap();
+}
+// @end
+
+#[test]
+fn the_checkpoint_syncs_the_log_first() {
+    // @listing unsynced-test
+    let (mut db, disk, log) = bank();
+    db.pager().checkpoint().unwrap();
+    db.execute("UPDATE accounts SET balance = 90 WHERE id = 1").unwrap();
+    // The bonus's four frames are written, and the program is killed before the
+    // sync that would have made them durable.
+    disk.stop_after(4);
+    assert!(db.execute(BONUS).is_err());
+    for writes in 0..=8 {
+        let mut file = CrashDisk::new();
+        let mut log_file = file.another_file();
+        left_by_kill(&disk, &mut file);
+        left_by_kill(&log, &mut log_file);
+        // The next program finds the bonus committed in a log not yet synced.
+        let mut db = open(file.clone(), log_file.clone());
+        assert_eq!((total(&mut db), log_file.pending()), (61_490, 1));
+        // It checkpoints, and the power fails partway through.
+        file.stop_after(writes);
+        let _ = db.pager().checkpoint();
+        for seed in 0..10 {
+            let mut db = open(file.power_cut(seed), log_file.power_cut(seed + 1000));
+            db.check().unwrap();
+            // Without the bonus or with it, but never with part of it.
+            assert!([59_990, 61_490].contains(&total(&mut db)));
         }
     }
     // @end
@@ -292,7 +335,7 @@ fn checkpoints_by_themselves() {
     // The database file has its eight pages now, apart from the newest changes.
     assert_eq!(disk.size().unwrap(), 8 * 4096);
     assert_eq!(db.pager().log_frames(), 5);
-    assert_eq!((disk.writes(), disk.syncs()), (253, 129));
+    assert_eq!((disk.writes(), disk.syncs()), (253, 138));
     // @end
 }
 
